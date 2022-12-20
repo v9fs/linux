@@ -176,6 +176,8 @@ static struct p9_fid *v9fs_fid_lookup_with_uid(struct dentry *dentry,
 	struct v9fs_session_info *v9ses;
 	struct p9_fid *fid, *root_fid, *old_fid;
 
+	p9_debug(P9_DEBUG_VFS, " dentry: %p\n", dentry);
+
 	v9ses = v9fs_dentry2v9ses(dentry);
 	access = v9ses->flags & V9FS_ACCESS_MASK;
 	fid = v9fs_fid_find(dentry, uid, any);
@@ -290,6 +292,8 @@ struct p9_fid *v9fs_fid_lookup(struct dentry *dentry)
 	kuid_t uid;
 	int  any, access;
 	struct v9fs_session_info *v9ses;
+
+	p9_debug(P9_DEBUG_VFS, " dentry: %p\n", dentry);
 
 	v9ses = v9fs_dentry2v9ses(dentry);
 	access = v9ses->flags & V9FS_ACCESS_MASK;

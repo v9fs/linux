@@ -438,12 +438,13 @@ static int v9fs_file_fsync(struct file *filp, loff_t start, loff_t end,
 	struct p9_wstat wstat;
 	int retval;
 
+	p9_debug(P9_DEBUG_VFS, "filp %p datasync %x\n", filp, datasync);
+
 	retval = file_write_and_wait_range(filp, start, end);
 	if (retval)
 		return retval;
 
 	inode_lock(inode);
-	p9_debug(P9_DEBUG_VFS, "filp %p datasync %x\n", filp, datasync);
 
 	fid = filp->private_data;
 	v9fs_blank_wstat(&wstat);
@@ -461,13 +462,13 @@ int v9fs_file_fsync_dotl(struct file *filp, loff_t start, loff_t end,
 	struct inode *inode = filp->f_mapping->host;
 	int retval;
 
+	p9_debug(P9_DEBUG_VFS, "filp %p datasync %x\n", filp, datasync);
+
 	retval = file_write_and_wait_range(filp, start, end);
 	if (retval)
 		return retval;
 
 	inode_lock(inode);
-	p9_debug(P9_DEBUG_VFS, "filp %p datasync %x\n", filp, datasync);
-
 	fid = filp->private_data;
 
 	retval = p9_client_fsync(fid, datasync);
@@ -507,7 +508,6 @@ v9fs_vm_page_mkwrite(struct vm_fault *vmf)
 	struct folio *folio = page_folio(vmf->page);
 	struct file *filp = vmf->vma->vm_file;
 	struct inode *inode = file_inode(filp);
-
 
 	p9_debug(P9_DEBUG_VFS, "folio %p fid %lx\n",
 		 folio, (unsigned long)filp->private_data);
@@ -551,10 +551,10 @@ static void v9fs_mmap_vm_close(struct vm_area_struct *vma)
 			(vma->vm_end - vma->vm_start - 1),
 	};
 
+	p9_debug(P9_DEBUG_VFS, "9p VMA close, %p, flushing", vma);
+
 	if (!(vma->vm_flags & VM_SHARED))
 		return;
-
-	p9_debug(P9_DEBUG_VFS, "9p VMA close, %p, flushing", vma);
 
 	inode = file_inode(vma->vm_file);
 	filemap_fdatawrite_wbc(inode->i_mapping, &wbc);

@@ -39,6 +39,8 @@ static void v9fs_issue_read(struct netfs_io_subrequest *subreq)
 	size_t len = subreq->len   - subreq->transferred;
 	int total, err;
 
+	p9_debug(P9_DEBUG_CACHE, "subreq %p\n", subreq);
+
 	iov_iter_xarray(&to, READ, &rreq->mapping->i_pages, pos, len);
 
 	total = p9_client_read(fid, pos, &to, &err);
@@ -58,6 +60,8 @@ static void v9fs_issue_read(struct netfs_io_subrequest *subreq)
 static int v9fs_init_request(struct netfs_io_request *rreq, struct file *file)
 {
 	struct p9_fid *fid = file->private_data;
+
+	p9_debug(P9_DEBUG_CACHE, "req %p file %p\n", rreq, file);
 
 	BUG_ON(!fid);
 
@@ -80,6 +84,8 @@ static void v9fs_free_request(struct netfs_io_request *rreq)
 {
 	struct p9_fid *fid = rreq->netfs_priv;
 
+	p9_debug(P9_DEBUG_CACHE, "req %p\n", rreq);
+
 	p9_fid_put(fid);
 }
 
@@ -91,6 +97,8 @@ static int v9fs_begin_cache_operation(struct netfs_io_request *rreq)
 {
 #ifdef CONFIG_9P_FSCACHE
 	struct fscache_cookie *cookie = v9fs_inode_cookie(V9FS_I(rreq->inode));
+
+	p9_debug(P9_DEBUG_CACHE, "req %p\n", rreq);
 
 	return fscache_begin_read_operation(&rreq->cache_resources, cookie);
 #else
@@ -117,6 +125,8 @@ static bool v9fs_release_folio(struct folio *folio, gfp_t gfp)
 {
 	struct inode *inode = folio_inode(folio);
 
+	p9_debug(P9_DEBUG_CACHE, "folio %p\n", folio);
+
 	if (folio_test_private(folio))
 		return false;
 #ifdef CONFIG_9P_FSCACHE
@@ -130,17 +140,37 @@ static bool v9fs_release_folio(struct folio *folio, gfp_t gfp)
 	return true;
 }
 
+/**
+ * v9fs_invalidate_folio - wait for data to be flushed
+ * @folio: The folio to be released
+ * @offset: start of flush region
+ * @length: how much to flush
+ *
+ */
 static void v9fs_invalidate_folio(struct folio *folio, size_t offset,
 				 size_t length)
 {
+	p9_debug(P9_DEBUG_CACHE, "folio %p sz %lx len %lx\n", folio, offset,
+		length);
+
 	folio_wait_fscache(folio);
 }
 
+/**
+ * v9fs_write_to_cache_done - invalidate fscache based on write
+ * @priv: v9inode being invalidated
+ * @transferred_or_error: how much was written
+ * @was_async: was this async
+ *
+ */
 static void v9fs_write_to_cache_done(void *priv, ssize_t transferred_or_error,
 				     bool was_async)
 {
 	struct v9fs_inode *v9inode = priv;
 	__le32 version;
+
+	p9_debug(P9_DEBUG_CACHE, "v9inode %p sz %lx async %x\n", priv,
+		transferred_or_error, was_async);
 
 	if (IS_ERR_VALUE(transferred_or_error) &&
 	    transferred_or_error != -ENOBUFS) {
@@ -150,6 +180,11 @@ static void v9fs_write_to_cache_done(void *priv, ssize_t transferred_or_error,
 	}
 }
 
+/**
+ * v9fs_vfs_write_folio_locked - write out folio, called by vfs_writepage
+ * @folio: folio being written
+ *
+ */
 static int v9fs_vfs_write_folio_locked(struct folio *folio)
 {
 	struct inode *inode = folio_inode(folio);
@@ -161,6 +196,8 @@ static int v9fs_vfs_write_folio_locked(struct folio *folio)
 	size_t len = folio_size(folio);
 	struct p9_fid *writeback_fid;
 	int err;
+
+	p9_debug(P9_DEBUG_CACHE, "folio %p\n", folio);
 
 	if (start >= i_size)
 		return 0; /* Simultaneous truncation occurred */
@@ -197,12 +234,18 @@ static int v9fs_vfs_write_folio_locked(struct folio *folio)
 	return err;
 }
 
+/**
+ * v9fs_vfs_writepage - write back page from page cache
+ * @page: page being written
+ * @wbc: writeback control flags
+ *
+ */
 static int v9fs_vfs_writepage(struct page *page, struct writeback_control *wbc)
 {
 	struct folio *folio = page_folio(page);
 	int retval;
 
-	p9_debug(P9_DEBUG_VFS, "folio %p\n", folio);
+	p9_debug(P9_DEBUG_CACHE, "folio %p wbc %p\n", folio, wbc);
 
 	retval = v9fs_vfs_write_folio_locked(folio);
 	if (retval < 0) {
@@ -219,9 +262,17 @@ static int v9fs_vfs_writepage(struct page *page, struct writeback_control *wbc)
 	return retval;
 }
 
+/**
+ * v9fs_launder_folio - called before freeing folio
+ * @page: page being written
+ * @wbc: writeback control flags
+ *
+ */
 static int v9fs_launder_folio(struct folio *folio)
 {
 	int retval;
+
+	p9_debug(P9_DEBUG_CACHE, "folio %p\n", folio);
 
 	if (folio_clear_dirty_for_io(folio)) {
 		retval = v9fs_vfs_write_folio_locked(folio);
@@ -256,6 +307,8 @@ v9fs_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 	ssize_t n;
 	int err = 0;
 
+	p9_debug(P9_DEBUG_VFS, "iocb %p iter %p\n", iocb, iter);
+
 	if (iov_iter_rw(iter) == WRITE) {
 		n = p9_client_write(file->private_data, pos, iter, &err);
 		if (n) {
@@ -271,6 +324,16 @@ v9fs_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 	return n ? n : err;
 }
 
+/**
+ * v9fs_write_begin - called before data is copied into cache
+ * @filep: file being operated on
+ * @mapping: mapping of the page cache
+ * @pos: offset
+ * @len: length of write request
+ * @subpage: unused
+ * @fsdata: unused
+ *
+ */
 static int v9fs_write_begin(struct file *filp, struct address_space *mapping,
 			    loff_t pos, unsigned int len,
 			    struct page **subpagep, void **fsdata)
@@ -293,6 +356,17 @@ static int v9fs_write_begin(struct file *filp, struct address_space *mapping,
 	return retval;
 }
 
+/**
+ * v9fs_write_end - called after data is copied into cache
+ * @filep: file being operated on
+ * @mapping: mapping of the page cache
+ * @pos: offset
+ * @len: length of write request
+ * @copied: length of data actually written
+ * @subpage: unused
+ * @fsdata: unused
+ *
+ */
 static int v9fs_write_end(struct file *filp, struct address_space *mapping,
 			  loff_t pos, unsigned int len, unsigned int copied,
 			  struct page *subpage, void *fsdata)
@@ -331,7 +405,11 @@ out:
 }
 
 #ifdef CONFIG_9P_FSCACHE
-/*
+/**
+ * v9fs_dirty_folio - called by VM to mark folio as dirty
+ * @mapping: mapping of the page cache
+ * @folio: folio being dirtied
+ *
  * Mark a page as having been made dirty and thus needing writeback.  We also
  * need to pin the cache object to write back to.
  */

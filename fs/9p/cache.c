@@ -22,6 +22,8 @@ int v9fs_cache_session_get_cookie(struct v9fs_session_info *v9ses,
 	struct fscache_volume *vcookie;
 	char *name, *p;
 
+	p9_debug(P9_DEBUG_FSC, "session %p, dev_name: %s\n", v9ses, dev_name);
+
 	name = kasprintf(GFP_KERNEL, "9p,%s,%s",
 			 dev_name, v9ses->cachetag ?: v9ses->aname);
 	if (!name)
@@ -53,6 +55,8 @@ void v9fs_cache_inode_get_cookie(struct inode *inode)
 	struct v9fs_session_info *v9ses;
 	__le32 version;
 	__le64 path;
+
+	p9_debug(P9_DEBUG_FSC, "inode %p\n", inode);
 
 	if (!S_ISREG(inode->i_mode))
 		return;

@@ -31,7 +31,7 @@
  */
 static int v9fs_cached_dentry_delete(const struct dentry *dentry)
 {
-	p9_debug(P9_DEBUG_VFS, " dentry: %pd (%p)\n",
+	p9_debug(P9_DEBUG_CACHE, " dentry: %pd (%p)\n",
 		 dentry, dentry);
 
 	/* Don't cache negative dentries */
@@ -50,18 +50,28 @@ static void v9fs_dentry_release(struct dentry *dentry)
 {
 	struct hlist_node *p, *n;
 
-	p9_debug(P9_DEBUG_VFS, " dentry: %pd (%p)\n",
+	p9_debug(P9_DEBUG_CACHE, " dentry: %pd (%p)\n",
 		 dentry, dentry);
 	hlist_for_each_safe(p, n, (struct hlist_head *)&dentry->d_fsdata)
 		p9_fid_put(hlist_entry(p, struct p9_fid, dlist));
 	dentry->d_fsdata = NULL;
 }
 
+/**
+ * v9fs_lookup_revalidate - make sure dcache dentry  is up to date before use
+ * @dentry: dentry that is being validated
+ * @flags: options to validation (mostly LOOKUP_RCU which we don't support)
+ *
+ */
+
 static int v9fs_lookup_revalidate(struct dentry *dentry, unsigned int flags)
 {
 	struct p9_fid *fid;
 	struct inode *inode;
 	struct v9fs_inode *v9inode;
+
+	p9_debug(P9_DEBUG_CACHE, " dentry: %pd (%p) flags %x\n", dentry, dentry,
+		flags);
 
 	if (flags & LOOKUP_RCU)
 		return -ECHILD;

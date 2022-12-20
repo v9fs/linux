@@ -149,6 +149,8 @@ v9fs_inode_from_fid_dotl(struct v9fs_session_info *v9ses, struct p9_fid *fid,
 	struct p9_stat_dotl *st;
 	struct inode *inode = NULL;
 
+	p9_debug(P9_DEBUG_VFS, " ses %p fid %p new %x\n", v9ses, fid, new);
+
 	st = p9_client_getattr_dotl(fid, P9_STATS_BASIC | P9_STATS_GEN);
 	if (IS_ERR(st))
 		return ERR_CAST(st);
@@ -222,6 +224,8 @@ static int
 v9fs_vfs_create_dotl(struct user_namespace *mnt_userns, struct inode *dir,
 		     struct dentry *dentry, umode_t omode, bool excl)
 {
+	p9_debug(P9_DEBUG_VFS, " inode %p dentry %p\n", dir, dentry);
+
 	return v9fs_vfs_mknod_dotl(mnt_userns, dir, dentry, omode, 0);
 }
 
@@ -243,6 +247,9 @@ v9fs_vfs_atomic_open_dotl(struct inode *dir, struct dentry *dentry,
 	struct posix_acl *pacl = NULL, *dacl = NULL;
 	struct dentry *res = NULL;
 
+	p9_debug(P9_DEBUG_VFS, "name:%s flags:0x%x mode:0x%x\n",
+		 name, flags, omode);
+
 	if (d_in_lookup(dentry)) {
 		res = v9fs_vfs_lookup(dir, dentry, 0);
 		if (IS_ERR(res))
@@ -257,11 +264,7 @@ v9fs_vfs_atomic_open_dotl(struct inode *dir, struct dentry *dentry,
 		return	finish_no_open(file, res);
 
 	v9ses = v9fs_inode2v9ses(dir);
-
 	name = dentry->d_name.name;
-	p9_debug(P9_DEBUG_VFS, "name:%s flags:0x%x mode:0x%x\n",
-		 name, flags, omode);
-
 	dfid = v9fs_parent_fid(dentry);
 	if (IS_ERR(dfid)) {
 		err = PTR_ERR(dfid);
@@ -926,10 +929,10 @@ v9fs_vfs_get_link_dotl(struct dentry *dentry,
 	char *target;
 	int retval;
 
+	p9_debug(P9_DEBUG_VFS, "%p\n", dentry);
+
 	if (!dentry)
 		return ERR_PTR(-ECHILD);
-
-	p9_debug(P9_DEBUG_VFS, "%pd\n", dentry);
 
 	fid = v9fs_fid_lookup(dentry);
 	if (IS_ERR(fid))
@@ -942,11 +945,20 @@ v9fs_vfs_get_link_dotl(struct dentry *dentry,
 	return target;
 }
 
+/**
+ * v9fs_refresh_inode_dotl - repopulate inode from server
+ * @fid: fid to operate with
+ * @inode: inode to update
+ *
+ */
+
 int v9fs_refresh_inode_dotl(struct p9_fid *fid, struct inode *inode)
 {
 	struct p9_stat_dotl *st;
 	struct v9fs_session_info *v9ses;
 	unsigned int flags;
+
+	p9_debug(P9_DEBUG_VFS, " fid %p inode %p\n", fid, inode);
 
 	v9ses = v9fs_inode2v9ses(inode);
 	st = p9_client_getattr_dotl(fid, P9_STATS_ALL);

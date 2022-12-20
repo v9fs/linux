@@ -28,7 +28,6 @@
 #include "fid.h"
 #include "cache.h"
 
-static const struct vm_operations_struct v9fs_file_vm_ops;
 static const struct vm_operations_struct v9fs_mmap_file_vm_ops;
 
 /**
@@ -504,15 +503,12 @@ v9fs_file_mmap(struct file *filp, struct vm_area_struct *vma)
 static vm_fault_t
 v9fs_vm_page_mkwrite(struct vm_fault *vmf)
 {
-	struct v9fs_inode *v9inode;
 	struct folio *folio = page_folio(vmf->page);
 	struct file *filp = vmf->vma->vm_file;
 	struct inode *inode = file_inode(filp);
 
 	p9_debug(P9_DEBUG_VFS, "folio %p fid %lx\n",
 		 folio, (unsigned long)filp->private_data);
-
-	v9inode = V9FS_I(inode);
 
 	/* Wait for the page to be written to the cache before we allow it to
 	 * be modified.  We then assume the entire page will need writing back.
@@ -559,13 +555,6 @@ static void v9fs_mmap_vm_close(struct vm_area_struct *vma)
 	inode = file_inode(vma->vm_file);
 	filemap_fdatawrite_wbc(inode->i_mapping, &wbc);
 }
-
-
-static const struct vm_operations_struct v9fs_file_vm_ops = {
-	.fault = filemap_fault,
-	.map_pages = filemap_map_pages,
-	.page_mkwrite = v9fs_vm_page_mkwrite,
-};
 
 static const struct vm_operations_struct v9fs_mmap_file_vm_ops = {
 	.close = v9fs_mmap_vm_close,

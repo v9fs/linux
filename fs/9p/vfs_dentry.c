@@ -85,6 +85,8 @@ static int v9fs_lookup_revalidate(struct dentry *dentry, unsigned int flags)
 		int retval;
 		struct v9fs_session_info *v9ses;
 
+		p9_debug(P9_DEBUG_CACHE, " dentry: %pd (%p) marked invalid, refreshing \n", dentry, dentry);
+
 		fid = v9fs_fid_lookup(dentry);
 		if (IS_ERR(fid))
 			return PTR_ERR(fid);

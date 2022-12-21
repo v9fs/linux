@@ -39,7 +39,7 @@ static void v9fs_issue_read(struct netfs_io_subrequest *subreq)
 	size_t len = subreq->len   - subreq->transferred;
 	int total, err;
 
-	p9_debug(P9_DEBUG_CACHE, "subreq %p\n", subreq);
+	p9_debug(P9_DEBUG_CACHE, "subreq %p %llx %lx\n", subreq, pos, len);
 
 	iov_iter_xarray(&to, READ, &rreq->mapping->i_pages, pos, len);
 
@@ -98,7 +98,7 @@ static int v9fs_begin_cache_operation(struct netfs_io_request *rreq)
 #ifdef CONFIG_9P_FSCACHE
 	struct fscache_cookie *cookie = v9fs_inode_cookie(V9FS_I(rreq->inode));
 
-	p9_debug(P9_DEBUG_CACHE, "req %p\n", rreq);
+	p9_debug(P9_DEBUG_CACHE, "req %p cookie: %p\n", rreq, cookie);
 
 	return fscache_begin_read_operation(&rreq->cache_resources, cookie);
 #else

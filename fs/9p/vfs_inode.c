@@ -374,6 +374,8 @@ void v9fs_evict_inode(struct inode *inode)
 	struct v9fs_inode *v9inode = V9FS_I(inode);
 	__le32 version;
 
+	p9_debug(P9_DEBUG_VFS, "inode %p\n", inode);
+
 	truncate_inode_pages_final(&inode->i_data);
 	version = cpu_to_le32(v9inode->qid.version);
 	fscache_clear_inode_writeback(v9fs_inode_cookie(v9inode), inode,

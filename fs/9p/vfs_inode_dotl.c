@@ -247,8 +247,7 @@ v9fs_vfs_atomic_open_dotl(struct inode *dir, struct dentry *dentry,
 	struct posix_acl *pacl = NULL, *dacl = NULL;
 	struct dentry *res = NULL;
 
-	p9_debug(P9_DEBUG_VFS, "name:%s flags:0x%x mode:0x%x\n",
-		 name, flags, omode);
+	p9_debug(P9_DEBUG_VFS, " \n");
 
 	if (d_in_lookup(dentry)) {
 		res = v9fs_vfs_lookup(dir, dentry, 0);
@@ -271,6 +270,9 @@ v9fs_vfs_atomic_open_dotl(struct inode *dir, struct dentry *dentry,
 		p9_debug(P9_DEBUG_VFS, "fid lookup failed %d\n", err);
 		goto out;
 	}
+
+	p9_debug(P9_DEBUG_VFS, "  name:%s flags:0x%x mode:0x%x\n",
+		 name, flags, omode);
 
 	/* clone a fid to use for creation */
 	ofid = clone_fid(dfid);

@@ -632,9 +632,9 @@ static void v9fs_sysfs_cleanup(void)
 	kobject_put(v9fs_kobj);
 }
 
-static void v9fs_inode_init_once(void *foo)
+static void v9fs_inode_init_once(void *v9n)
 {
-	struct v9fs_inode *v9inode = (struct v9fs_inode *)foo;
+	struct v9fs_inode *v9inode = (struct v9fs_inode *)v9n;
 
 	memset(&v9inode->qid, 0, sizeof(v9inode->qid));
 	inode_init_once(&v9inode->netfs.inode);

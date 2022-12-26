@@ -111,14 +111,26 @@ struct v9fs_session_info {
 	long session_lock_timeout; /* retry interval for blocking locks */
 };
 
-/* cache_validity flags */
-#define V9FS_INO_INVALID_ATTR 0x01
-
+/**
+ * struct v9fs_inode - 9p inode information
+ * @netfs: netfs container - cache information for inode
+ * @qid: inode qid based on last stat
+ * @cache_validity: validity of the inode
+ * @mutex: mutex on inode operations (protects fid lists)
+ * @lock: spinlock protecting fid lists
+ * @o_fids: open fids associated with this inode
+ * @t_fids: transient fids associated with this inode
+ *
+ */
 struct v9fs_inode {
 	struct netfs_inode netfs; /* Netfslib context and vfs inode */
 	struct p9_qid qid;
-	unsigned int cache_validity;
+	bool cache_validity;
 	struct mutex v_mutex;
+
+	struct spinlock lock;
+	void *o_fids; /* FUTURE: open fids */
+	void *t_fids; /* transient fids (used to be in dentries) */
 };
 
 static inline struct v9fs_inode *V9FS_I(const struct inode *inode)

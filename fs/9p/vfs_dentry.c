@@ -48,13 +48,11 @@ static int v9fs_cached_dentry_delete(const struct dentry *dentry)
 
 static void v9fs_dentry_release(struct dentry *dentry)
 {
-	struct hlist_node *p, *n;
 
 	p9_debug(P9_DEBUG_VFS, " dentry: %pd (%p)\n",
 		 dentry, dentry);
-	hlist_for_each_safe(p, n, (struct hlist_head *)&dentry->d_fsdata)
-		p9_fid_put(hlist_entry(p, struct p9_fid, dlist));
-	dentry->d_fsdata = NULL;
+
+	/* REVIEW: if nothing to do here, maybe we eliminate function? */
 }
 
 static int v9fs_lookup_revalidate(struct dentry *dentry, unsigned int flags)
@@ -71,7 +69,7 @@ static int v9fs_lookup_revalidate(struct dentry *dentry, unsigned int flags)
 		goto out_valid;
 
 	v9inode = V9FS_I(inode);
-	if (v9inode->cache_validity & V9FS_INO_INVALID_ATTR) {
+	if (!v9inode->cache_validity) {
 		int retval;
 		struct v9fs_session_info *v9ses;
 

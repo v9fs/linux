@@ -156,8 +156,8 @@ struct p9_fid {
 
 	void *rdir;
 
-	struct hlist_node dlist;	/* list of all fids attached to a dentry */
-	struct hlist_node ilist;
+	struct hlist_node dlist;	/* transient fids attached to inode */
+	struct hlist_node ilist;	/* open fids attached to inode */
 };
 
 /**

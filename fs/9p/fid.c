@@ -18,11 +18,10 @@
 #include "v9fs_vfs.h"
 #include "fid.h"
 
-static inline void __add_fid(struct dentry *dentry, struct p9_fid *fid)
+static inline void __add_fid(struct v9fs_inode *v9node, struct p9_fid *fid)
 {
-	hlist_add_head(&fid->dlist, (struct hlist_head *)&dentry->d_fsdata);
+	hlist_add_head(&fid->dlist, (struct hlist_head *)&v9node->t_fids);
 }
-
 
 /**
  * v9fs_fid_add - add a fid to a dentry
@@ -30,13 +29,15 @@ static inline void __add_fid(struct dentry *dentry, struct p9_fid *fid)
  * @pfid: fid to add, NULLed out
  *
  */
-void v9fs_fid_add(struct dentry *dentry, struct p9_fid **pfid)
+void v9fs_fid_add(struct v9fs_inode *v9node, struct p9_fid **pfid)
 {
 	struct p9_fid *fid = *pfid;
 
-	spin_lock(&dentry->d_lock);
-	__add_fid(dentry, fid);
-	spin_unlock(&dentry->d_lock);
+	p9_debug(P9_DEBUG_VFS, " v9fs_inode %p fid %p fid %d uid %d",v9node, fid, fid->fid, from_kuid(&init_user_ns, fid->uid));
+
+	spin_lock(&v9node->lock);
+	__add_fid(v9node, fid);
+	spin_unlock(&v9node->lock);
 
 	*pfid = NULL;
 }
@@ -113,12 +114,42 @@ void v9fs_open_fid_add(struct inode *inode, struct p9_fid **pfid)
 static struct p9_fid *v9fs_fid_find(struct dentry *dentry, kuid_t uid, int any)
 {
 	struct p9_fid *fid, *ret;
+	struct v9fs_inode *v9node;
 
 	p9_debug(P9_DEBUG_VFS, " dentry: %pd (%p) uid %d any %d\n",
 		 dentry, dentry, from_kuid(&init_user_ns, uid),
 		 any);
 	ret = NULL;
 	/* we'll recheck under lock if there's anything to look in */
+	if(dentry->d_inode == NULL) {
+		WARN(1, "dentry did not contain an inode\n");
+		return NULL;
+	}
+
+	v9node = V9FS_I(dentry->d_inode);
+	if (v9node->t_fids) {
+		struct hlist_head *h = v9node->t_fids;
+
+		p9_debug(P9_DEBUG_VFS, " found v9node->t_fids %p in v9node %p\n", v9node->t_fids, v9node);
+
+		spin_lock(&v9node->lock);
+		hlist_for_each_entry(fid, h, dlist) {
+			p9_debug(P9_DEBUG_VFS, " checking fid %p %d fid->uid %d uid %d\n", fid, fid->fid, from_kuid(&init_user_ns, fid->uid), from_kuid(&init_user_ns, uid));
+
+			if (any || uid_eq(fid->uid, uid)) {
+				ret = fid;
+				p9_fid_get(ret);
+				break;
+			}
+		}
+		spin_unlock(&v9node->lock);
+	} else {
+		p9_debug(P9_DEBUG_VFS, " didn't find v9node->t_fids %p in v9node %p\n", v9node->t_fids, v9node);
+		ret = v9fs_fid_find_inode(dentry->d_inode, false, uid, any);
+	}
+
+#ifdef ndef /* REVIEW*/
+/* TODO: switch to inode traversal please */
 	if (dentry->d_fsdata) {
 		struct hlist_head *h = (struct hlist_head *)&dentry->d_fsdata;
 
@@ -135,7 +166,8 @@ static struct p9_fid *v9fs_fid_find(struct dentry *dentry, kuid_t uid, int any)
 		if (dentry->d_inode)
 			ret = v9fs_fid_find_inode(dentry->d_inode, false, uid, any);
 	}
-
+#endif
+	p9_debug(P9_DEBUG_VFS, " returning %p\n", ret);
 	return ret;
 }
 
@@ -219,7 +251,7 @@ static struct p9_fid *v9fs_fid_lookup_with_uid(struct dentry *dentry,
 			return fid;
 
 		root_fid = p9_fid_get(fid);
-		v9fs_fid_add(dentry->d_sb->s_root, &fid);
+		v9fs_fid_add(V9FS_I(d_inode(dentry->d_sb->s_root)), &fid);
 	}
 	/* If we are root ourself just return that */
 	if (dentry->d_sb->s_root == dentry)
@@ -267,8 +299,9 @@ fid_out:
 			p9_fid_put(fid);
 			fid = ERR_PTR(-ENOENT);
 		} else {
-			__add_fid(dentry, fid);
 			p9_fid_get(fid);
+			v9fs_fid_add(V9FS_I(d_inode(dentry)), &fid);
+			/* __add_fid(V9FS_I(d_inode(dentry)), fid); REVIEW: wrong locks held */
 			spin_unlock(&dentry->d_lock);
 		}
 	}

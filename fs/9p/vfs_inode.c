@@ -230,8 +230,11 @@ struct inode *v9fs_alloc_inode(struct super_block *sb)
 	v9inode = alloc_inode_sb(sb, v9fs_inode_cache, GFP_KERNEL);
 	if (!v9inode)
 		return NULL;
-	v9inode->cache_validity = 0;
+	v9inode->cache_validity = false;
 	mutex_init(&v9inode->v_mutex);
+	spin_lock_init(&v9inode->lock);
+	memset(&v9inode->qid, 0, sizeof(v9inode->qid));
+
 	return &v9inode->netfs.inode;
 }
 
@@ -242,6 +245,7 @@ struct inode *v9fs_alloc_inode(struct super_block *sb)
 
 void v9fs_free_inode(struct inode *inode)
 {
+	/* TODO: make sure fid lists are empty */
 	kmem_cache_free(v9fs_inode_cache, V9FS_I(inode));
 }
 
@@ -642,7 +646,7 @@ v9fs_create(struct v9fs_session_info *v9ses, struct inode *dir,
 				   "inode creation failed %d\n", err);
 			goto error;
 		}
-		v9fs_fid_add(dentry, &fid);
+		v9fs_fid_add(V9FS_I(inode), &fid);
 		d_instantiate(dentry, inode);
 	}
 	p9_fid_put(dfid);
@@ -767,6 +771,7 @@ struct dentry *v9fs_vfs_lookup(struct inode *dir, struct dentry *dentry,
 		inode = v9fs_get_inode_from_fid(v9ses, fid, dir->i_sb);
 	else
 		inode = v9fs_get_new_inode_from_fid(v9ses, fid, dir->i_sb);
+
 	/*
 	 * If we had a rename on the server and a parallel lookup
 	 * for the new name, then make sure we instantiate with
@@ -774,15 +779,25 @@ struct dentry *v9fs_vfs_lookup(struct inode *dir, struct dentry *dentry,
 	 * moved b under k and client parallely did a lookup for
 	 * k/b.
 	 */
+	/* REVIEW: this still seems off */
+	p9_debug(P9_DEBUG_VFS, "  calling d_split_alias %p %pd %p fid %d\n", inode, dentry, dentry, fid->fid);
 	res = d_splice_alias(inode, dentry);
-	if (!IS_ERR(fid)) {
-		if (!res)
-			v9fs_fid_add(dentry, &fid);
-		else if (!IS_ERR(res))
-			v9fs_fid_add(res, &fid);
-		else
+	p9_debug(P9_DEBUG_VFS, "  res returned %p\n", res);
+	if(!IS_ERR(fid)) {
+		if (!res) {
+			p9_debug(P9_DEBUG_VFS, "  res is NULL, using fid %p %d and dentry %p to inode %p\n",fid, fid->fid, dentry, d_inode(dentry));
+			v9fs_fid_add(V9FS_I(d_inode(dentry)), &fid);
+			/* res = dentry; REVIEW: this seems right, but don't know */
+		} else if (!IS_ERR(res)) {
+			p9_debug(P9_DEBUG_VFS, "  there is res, using it\n");
+			v9fs_fid_add(V9FS_I(d_inode(res)), &fid);
+		} else {
+			p9_debug(P9_DEBUG_VFS, "  res is_err, putting fid\n");
 			p9_fid_put(fid);
+		}
 	}
+
+	p9_debug(P9_DEBUG_VFS, "  returning %pd %p fid %p\n", res, res, fid);
 	return res;
 }
 
@@ -1173,7 +1188,7 @@ v9fs_stat2inode(struct p9_wstat *stat, struct inode *inode,
 		v9fs_i_size_write(inode, stat->length);
 	/* not real number of blocks, but 512 byte ones ... */
 	inode->i_blocks = (stat->length + 512 - 1) >> 9;
-	v9inode->cache_validity &= ~V9FS_INO_INVALID_ATTR;
+	v9inode->cache_validity = true;
 }
 
 /**

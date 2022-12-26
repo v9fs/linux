@@ -155,6 +155,7 @@ v9fs_inode_from_fid_dotl(struct v9fs_session_info *v9ses, struct p9_fid *fid,
 	if (IS_ERR(st))
 		return ERR_CAST(st);
 
+	/* REVIEW: don't we have the qid in the fid? */
 	inode = v9fs_qid_iget_dotl(sb, &st->qid, fid, st, new);
 	kfree(st);
 	return inode;
@@ -321,11 +322,11 @@ v9fs_vfs_atomic_open_dotl(struct inode *dir, struct dentry *dentry,
 	}
 	/* Now set the ACL based on the default value */
 	v9fs_set_create_acl(inode, fid, dacl, pacl);
+	v9inode = V9FS_I(inode);
 
-	v9fs_fid_add(dentry, &fid);
+	v9fs_fid_add(v9inode, &fid);
 	d_instantiate(dentry, inode);
 
-	v9inode = V9FS_I(inode);
 	/* Since we are opening a file, assign the open fid to the file */
 	err = finish_open(file, dentry, generic_file_open);
 	if (err)
@@ -416,7 +417,7 @@ static int v9fs_vfs_mkdir_dotl(struct user_namespace *mnt_userns,
 				 err);
 			goto error;
 		}
-		v9fs_fid_add(dentry, &fid);
+		v9fs_fid_add(V9FS_I(inode), &fid);
 		v9fs_set_create_acl(inode, fid, dacl, pacl);
 		d_instantiate(dentry, inode);
 		err = 0;
@@ -690,7 +691,7 @@ v9fs_stat2inode_dotl(struct p9_stat_dotl *stat, struct inode *inode,
 	/* Currently we don't support P9_STATS_BTIME and P9_STATS_DATA_VERSION
 	 * because the inode structure does not have fields for them.
 	 */
-	v9inode->cache_validity &= ~V9FS_INO_INVALID_ATTR;
+	v9inode->cache_validity = true;
 }
 
 static int
@@ -746,7 +747,7 @@ v9fs_vfs_symlink_dotl(struct user_namespace *mnt_userns, struct inode *dir,
 				 err);
 			goto error;
 		}
-		v9fs_fid_add(dentry, &fid);
+		v9fs_fid_add(V9FS_I(inode), &fid);
 		d_instantiate(dentry, inode);
 		err = 0;
 	} else {
@@ -891,7 +892,7 @@ v9fs_vfs_mknod_dotl(struct user_namespace *mnt_userns, struct inode *dir,
 			goto error;
 		}
 		v9fs_set_create_acl(inode, fid, dacl, pacl);
-		v9fs_fid_add(dentry, &fid);
+		v9fs_fid_add(V9FS_I(inode), &fid);
 		d_instantiate(dentry, inode);
 		err = 0;
 	} else {
@@ -931,12 +932,14 @@ v9fs_vfs_get_link_dotl(struct dentry *dentry,
 	char *target;
 	int retval;
 
-	p9_debug(P9_DEBUG_VFS, "%p\n", dentry);
+	p9_debug(P9_DEBUG_VFS, "dentry %pd %p inode %p \n", dentry, dentry, inode);
 
 	if (!dentry)
 		return ERR_PTR(-ECHILD);
 
 	fid = v9fs_fid_lookup(dentry);
+	WARN(fid == NULL, "dentry %pd %p inode %p yielded fid %p", dentry, dentry, d_inode(dentry), fid);
+		/* TODO: fid == NULL shouldn't happen, we should always get an error */
 	if (IS_ERR(fid))
 		return ERR_CAST(fid);
 	retval = p9_client_readlink(fid, &target);

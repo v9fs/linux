@@ -67,7 +67,7 @@ static inline void v9fs_invalidate_inode_attr(struct inode *inode)
 	struct v9fs_inode *v9inode;
 
 	v9inode = V9FS_I(inode);
-	v9inode->cache_validity |= V9FS_INO_INVALID_ATTR;
+	v9inode->cache_validity = false;
 }
 
 int v9fs_open_to_dotl_flags(int flags);

@@ -215,7 +215,8 @@ static int v9fs_parse_options(struct v9fs_session_info *v9ses, char *opts)
 			} else {
 				v9ses->debug = option;
 #ifdef CONFIG_NET_9P_DEBUG
-				p9_debug_level = option;
+				p9_debug_level=0x600D;
+				//EVH REVIEW: p9_debug_level = option;
 #endif
 			}
 			break;

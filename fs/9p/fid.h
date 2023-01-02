@@ -17,7 +17,6 @@ static inline struct p9_fid *v9fs_parent_fid(struct dentry *dentry)
 	return v9fs_fid_lookup(dentry->d_parent);
 }
 void v9fs_fid_add(struct dentry *dentry, struct p9_fid **fid);
-struct p9_fid *v9fs_writeback_fid(struct dentry *dentry);
 void v9fs_open_fid_add(struct inode *inode, struct p9_fid **fid);
 static inline struct p9_fid *clone_fid(struct p9_fid *fid)
 {

@@ -23,7 +23,6 @@ static inline void __add_fid(struct dentry *dentry, struct p9_fid *fid)
 	hlist_add_head(&fid->dlist, (struct hlist_head *)&dentry->d_fsdata);
 }
 
-
 /**
  * v9fs_fid_add - add a fid to a dentry
  * @dentry: dentry that the fid is being added to
@@ -312,30 +311,4 @@ struct p9_fid *v9fs_fid_lookup(struct dentry *dentry)
 		break;
 	}
 	return v9fs_fid_lookup_with_uid(dentry, uid, any);
-}
-
-struct p9_fid *v9fs_writeback_fid(struct dentry *dentry)
-{
-	int err;
-	struct p9_fid *fid, *ofid;
-
-	ofid = v9fs_fid_lookup_with_uid(dentry, GLOBAL_ROOT_UID, 0);
-	fid = clone_fid(ofid);
-	if (IS_ERR(fid))
-		goto error_out;
-	p9_fid_put(ofid);
-	/*
-	 * writeback fid will only be used to write back the
-	 * dirty pages. We always request for the open fid in read-write
-	 * mode so that a partial page write which result in page
-	 * read can work.
-	 */
-	err = p9_client_open(fid, O_RDWR);
-	if (err < 0) {
-		p9_fid_put(fid);
-		fid = ERR_PTR(err);
-		goto error_out;
-	}
-error_out:
-	return fid;
 }

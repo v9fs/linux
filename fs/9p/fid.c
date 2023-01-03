@@ -34,6 +34,8 @@ void v9fs_fid_add(struct dentry *dentry, struct p9_fid **pfid)
 {
 	struct p9_fid *fid = *pfid;
 
+	p9_trace("fid_add (transient) fid: %d dentry: %p", fid->fid, dentry);
+
 	spin_lock(&dentry->d_lock);
 	__add_fid(dentry, fid);
 	spin_unlock(&dentry->d_lock);
@@ -93,6 +95,8 @@ struct p9_fid *v9fs_fid_find_inode(struct inode *inode, bool want_writeable,
 void v9fs_open_fid_add(struct inode *inode, struct p9_fid **pfid)
 {
 	struct p9_fid *fid = *pfid;
+
+	p9_trace("fid_add (open) fid: %d inode: %p", fid->fid, inode);
 
 	spin_lock(&inode->i_lock);
 	hlist_add_head(&fid->ilist, (struct hlist_head *)&inode->i_private);
@@ -265,6 +269,7 @@ fid_out:
 			p9_fid_put(fid);
 			fid = ERR_PTR(-ENOENT);
 		} else {
+			p9_trace("fid_add (transient) fid: %d dentry: %p", fid->fid, dentry);
 			__add_fid(dentry, fid);
 			p9_fid_get(fid);
 			spin_unlock(&dentry->d_lock);

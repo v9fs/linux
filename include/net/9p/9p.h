@@ -10,9 +10,12 @@
 #ifndef NET_9P_H
 #define NET_9P_H
 
+#include <linux/ftrace.h>
+
 /**
  * enum p9_debug_flags - bits for mount time debug parameter
  * @P9_DEBUG_ERROR: more verbose error messages including original error string
+ * @P9_DEBUG_TRACE: display trace_printks as debug printks
  * @P9_DEBUG_9P: 9P protocol tracing
  * @P9_DEBUG_VFS: VFS API tracing
  * @P9_DEBUG_CONV: protocol conversion tracing
@@ -31,6 +34,7 @@
 
 enum p9_debug_flags {
 	P9_DEBUG_ERROR =	(1<<0),
+	P9_DEBUG_TRACE =	(1<<1),
 	P9_DEBUG_9P =		(1<<2),
 	P9_DEBUG_VFS =		(1<<3),
 	P9_DEBUG_CONV =		(1<<4),
@@ -56,6 +60,19 @@ void _p9_debug(enum p9_debug_flags level, const char *func,
 #else
 #define p9_debug(level, fmt, ...)			\
 	no_printk(fmt, ##__VA_ARGS__)
+#endif
+
+#if defined(CONFIG_FUNCTION_TRACER) && defined(CONFIG_NET_9P_DEBUG)
+#define p9_trace(fmt, ...) \
+	trace_printk(fmt, ##__VA_ARGS__)
+#else 
+#if defined(CONFIG_NET_9P_DEBUG)
+#define p9_trace(fmt, ...) \
+	_p9_debug(P9_DEBUG_TRACE, __func__, fmt, ##__VA_ARGS__)
+#else
+#define p9_trace(fmt, ...)			\
+	no_printk(fmt, ##__VA_ARGS__)
+#endif
 #endif
 
 /**

@@ -61,7 +61,7 @@ int v9fs_file_open(struct inode *inode, struct file *file)
 			return PTR_ERR(fid);
 
 		if ((v9ses->cache >= CACHE_WRITEBACK) && (omode & P9_OWRITE)) {
-			int writeback_omode = (omode & !P9_OWRITE) | P9_ORDWR;
+			int writeback_omode = (omode & ~P9_OWRITE) | P9_ORDWR;
 
 			p9_debug(P9_DEBUG_CACHE, "write-only file with writeback enabled, try opening O_RDWR\n");
 			err = p9_client_open(fid, writeback_omode);

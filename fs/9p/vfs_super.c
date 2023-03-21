@@ -290,54 +290,30 @@ static int v9fs_drop_inode(struct inode *inode)
 static int v9fs_write_inode(struct inode *inode,
 			    struct writeback_control *wbc)
 {
-	int ret;
-	struct p9_wstat wstat;
-	struct p9_fid *fid = v9fs_fid_find_inode(inode, false, INVALID_UID, true);
 	struct v9fs_inode *v9inode;
 
 	/*
 	 * send an fsync request to server irrespective of
 	 * wbc->sync_mode.
 	 */
-	p9_debug(P9_DEBUG_VFS, "%s: inode %p writeback_fid: %p\n", __func__, inode, fid);
-	v9inode = V9FS_I(inode);
-	if (!fid)
-		return -EINVAL;
-	v9fs_blank_wstat(&wstat);
+	p9_debug(P9_DEBUG_VFS, "%s: inode %p\n", __func__, inode);
 
-	ret = p9_client_wstat(fid, &wstat);
-	if (ret < 0) {
-		__mark_inode_dirty(inode, I_DIRTY_DATASYNC);
-		return ret;
-	}
+	v9inode = V9FS_I(inode);
 	fscache_unpin_writeback(wbc, v9fs_inode_cookie(v9inode));
-	p9_fid_put(fid);
+
 	return 0;
 }
 
 static int v9fs_write_inode_dotl(struct inode *inode,
 				 struct writeback_control *wbc)
 {
-	int ret;
-	struct p9_fid *fid = v9fs_fid_find_inode(inode, FMODE_WRITE, INVALID_UID, 1);
 	struct v9fs_inode *v9inode;
-	/*
-	 * send an fsync request to server irrespective of
-	 * wbc->sync_mode.
-	 */
-	v9inode = V9FS_I(inode);
-	p9_debug(P9_DEBUG_VFS, "%s: inode %p, writeback_fid %p\n",
-		 __func__, inode, fid);
-	if (!fid)
-		return -EINVAL;
 
-	ret = p9_client_fsync(fid, 0);
-	if (ret < 0) {
-		__mark_inode_dirty(inode, I_DIRTY_DATASYNC);
-		return ret;
-	}
+	v9inode = V9FS_I(inode);
+	p9_debug(P9_DEBUG_VFS, "%s: inode %p\n", __func__, inode);
+
 	fscache_unpin_writeback(wbc, v9fs_inode_cookie(v9inode));
-	p9_fid_put(fid);
+
 	return 0;
 }
 

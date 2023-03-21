@@ -42,7 +42,7 @@ void v9fs_fid_add(struct dentry *dentry, struct p9_fid **pfid)
 
 static bool v9fs_is_writeable(int mode)
 {
-	if ((mode & P9_OWRITE) || (mode & P9_ORDWR))
+	if (mode & (P9_OWRITE|P9_ORDWR))
 		return true;
 	else
 		return false;
@@ -51,7 +51,7 @@ static bool v9fs_is_writeable(int mode)
 /**
  * v9fs_fid_find_inode - search for an open fid off of the inode list
  * @inode: return a fid pointing to a specific inode
- * @writeable: only consider fids which are writeable
+ * @want_writeable: only consider fids which are writeable
  * @uid: return a fid belonging to the specified user
  * @any: ignore uid as a selection criteria
  *

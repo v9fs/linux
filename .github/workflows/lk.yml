@@ -9,6 +9,9 @@ on:
   
 jobs:
   build:
+    defaults:
+      run:
+        working-directory: /workspaces/linux
     runs-on: self-hosted
     container:
       image: ghcr.io/v9fs/docker:latest
@@ -16,7 +19,7 @@ jobs:
     steps:
     - name: check
       run: pwd && echo $USER
-    - name: actions/checkout@v3
+    - uses: actions/checkout@v3
     - name: configure
       run: mkdir -p .build && make O=.build defconfig
     - name: make

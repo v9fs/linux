@@ -10,8 +10,9 @@ on:
 jobs:
   build:
 
-#    runs-on: ghcr.io/docker/v9fs
     runs-on: self-hosted
+    container:
+      image: ghcr.io/v9fs/docker:latest
 
     steps:
     - uses: actions/checkout@v3

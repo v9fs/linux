@@ -19,5 +19,5 @@ jobs:
     - name: configure
       run: mkdir -p .build && make O=.build defconfig
     - name: make
-      run: make -j O=.build
+      run: make -j16 O=.build
   

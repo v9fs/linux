@@ -9,13 +9,10 @@ on:
   
 jobs:
   build:
-    defaults:
-      run:
-        working-directory: /workspaces
     runs-on: self-hosted
     container:
       image: ghcr.io/v9fs/docker:latest
-        
+      options: -u root
     steps:
     - name: check
       run: pwd && echo $USER

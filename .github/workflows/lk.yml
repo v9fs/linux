@@ -1,0 +1,21 @@
+name: Linux Kernel Build
+
+on:
+  push:
+    branches: [ "*" ]
+  pull_request:
+    branches: [ "ericvh/for-next" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+
+    runs-on: ghcr.io/docker/v9fs
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: configure
+      run: mkidr -p .build && make -O .build defconfig
+    - name: make
+      run: make -j O=.build
+  

@@ -42,4 +42,4 @@ jobs:
         cd /home/v9fs-test/test
         git config --global --add safe.directory /home/v9fs-test/test
         git pull
-        script -qefc ./test.bash /dev/null
+        ./test.bash

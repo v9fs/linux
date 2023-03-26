@@ -1,0 +1,45 @@
+name: Linux Kernel Build
+
+on:
+  push:
+    branches: [ "*" ]
+  pull_request:
+    branches: [ "ericvh/for-next" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: self-hosted
+    container:
+      image: ghcr.io/v9fs/docker:latest
+      options: -u root
+    steps:
+    - uses: actions/checkout@v3
+    - name: configure
+      run: mkdir -p .build && make O=.build defconfig
+    - name: make
+      run: make -j16 O=.build
+    - uses: actions/upload-artifact@v3
+      with:
+        name: kernel-image
+        path: .build/arch/*/boot/*Image
+        retention-days: 1
+  smoketest:
+    needs: build
+    runs-on: self-hosted
+    container:
+      image: ghcr.io/v9fs/docker:latest
+      options: -u root
+    steps:
+    - uses: actions/download-artifact@v3
+      with:
+        name: kernel-image
+        path: .build/arch/*/boot/*Image
+    - name: link workspaces to scratch directory
+      run: mkdir -p /workspaces && ln -s `pwd` /workspaces/linux
+    - name: Test sweep
+      run: |
+        cd /home/v9fs-test/test
+        git config --global --add safe.directory /home/v9fs-test/test
+        git pull
+        script -qefc ./test.bash /dev/null

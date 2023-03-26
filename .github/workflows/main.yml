@@ -1,0 +1,11 @@
+name: Linux Kernel Build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  call-action:
+    uses: v9fs/test/actions/main.yml@main
+    secrets: inherit
+

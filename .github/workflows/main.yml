@@ -43,3 +43,8 @@ jobs:
         git config --global --add safe.directory /home/v9fs-test/test
         git pull
         ./test.bash
+    - uses: actions/upload-artifact@v3
+      with:
+        name: test-results
+        path: /home/v9fs-test/test/logs
+        retention-days: 7

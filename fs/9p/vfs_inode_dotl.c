@@ -427,7 +427,7 @@ static int v9fs_vfs_mkdir_dotl(struct mnt_idmap *idmap,
 		v9fs_set_create_acl(inode, fid, dacl, pacl);
 		d_instantiate(dentry, inode);
 	}
-	inc_nlink(dir);
+	v9fs_inc_nlink(dir);
 	v9fs_invalidate_inode_attr(dir);
 error:
 	p9_fid_put(fid);

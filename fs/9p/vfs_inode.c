@@ -506,21 +506,43 @@ static int v9fs_at_to_dotl_flags(int flags)
 }
 
 /**
- * v9fs_dec_count - helper functon to drop i_nlink.
+ * v9fs_dec_nlink - helper functon to drop i_nlink.
  *
- * If a directory had nlink <= 2 (including . and ..), then we should not drop
- * the link count, which indicates the underlying exported fs doesn't maintain
- * nlink accurately. e.g.
+ * Put a guards around this so we are only dropping nlink
+ * if it would be valid.  This prevents bugs from an underlying
+ * filesystem implementations from triggering kernel WARNs.  We'll
+ * still print 9p debug messages if the underlying filesystem is wrong.
+ *
+ * known underlying filesystems which might exhibit this issue:
  * - overlayfs sets nlink to 1 for merged dir
  * - ext4 (with dir_nlink feature enabled) sets nlink to 1 if a dir has more
  *   than EXT4_LINK_MAX (65000) links.
  *
  * @inode: inode whose nlink is being dropped
  */
-static void v9fs_dec_count(struct inode *inode)
+static void v9fs_dec_nlink(struct inode *inode)
 {
-	if (!S_ISDIR(inode->i_mode) || inode->i_nlink > 2)
+	spin_lock(&inode->i_lock);
+	if (inode->i_nlink > 0)
 		drop_nlink(inode);
+	else
+		p9_debug(P9_DEBUG_ERROR, "WARNING: nlink is already 0 inode %p\n",
+			inode);
+	spin_unlock(&inode->i_lock);
+}
+
+static void v9fs_clear_nlink(struct inode *inode)
+{
+	spin_lock(&inode->i_lock);
+	clear_nlink(inode);
+	spin_unlock(&inode->i_lock);
+}
+
+void v9fs_inc_nlink(struct inode *inode)
+{
+	spin_lock(&inode->i_lock);
+	inc_nlink(inode);
+	spin_unlock(&inode->i_lock);
 }
 
 /**
@@ -566,10 +588,9 @@ static int v9fs_remove(struct inode *dir, struct dentry *dentry, int flags)
 		 * link count
 		 */
 		if (flags & AT_REMOVEDIR) {
-			clear_nlink(inode);
-			v9fs_dec_count(dir);
+			v9fs_clear_nlink(inode);
 		} else
-			v9fs_dec_count(inode);
+			v9fs_dec_nlink(inode);
 
 		v9fs_invalidate_inode_attr(inode);
 		v9fs_invalidate_inode_attr(dir);
@@ -713,7 +734,7 @@ static int v9fs_vfs_mkdir(struct mnt_idmap *idmap, struct inode *dir,
 		err = PTR_ERR(fid);
 		fid = NULL;
 	} else {
-		inc_nlink(dir);
+		v9fs_inc_nlink(dir);
 		v9fs_invalidate_inode_attr(dir);
 	}
 
@@ -963,14 +984,14 @@ error_locked:
 	if (!retval) {
 		if (new_inode) {
 			if (S_ISDIR(new_inode->i_mode))
-				clear_nlink(new_inode);
+				v9fs_clear_nlink(new_inode);
 			else
-				v9fs_dec_count(new_inode);
+				v9fs_dec_nlink(new_inode);
 		}
 		if (S_ISDIR(old_inode->i_mode)) {
 			if (!new_inode)
-				inc_nlink(new_dir);
-			v9fs_dec_count(old_dir);
+				v9fs_inc_nlink(new_dir);
+			v9fs_dec_nlink(old_dir);
 		}
 		v9fs_invalidate_inode_attr(old_inode);
 		v9fs_invalidate_inode_attr(old_dir);

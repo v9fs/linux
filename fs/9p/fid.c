@@ -139,69 +139,19 @@ static struct p9_fid *v9fs_fid_find(struct dentry *dentry, kuid_t uid, int any)
 	return ret;
 }
 
-/*
- * We need to hold v9ses->rename_sem as long as we hold references
- * to returned path array. Array element contain pointers to
- * dentry names.
- */
-static int build_path_from_dentry(struct v9fs_session_info *v9ses,
-				  struct dentry *dentry, const unsigned char ***names)
+static struct p9_fid *v9fs_first_fid(struct dentry *dentry,
+					       kuid_t uid, int any, const unsigned char ***wnames, 
+						   int *wn, int n)
 {
-	int n = 0, i;
-	const unsigned char **wnames;
-	struct dentry *ds;
-
-	for (ds = dentry; !IS_ROOT(ds); ds = ds->d_parent)
-		n++;
-
-	wnames = kmalloc_array(n, sizeof(char *), GFP_KERNEL);
-	if (!wnames)
-		goto err_out;
-
-	for (ds = dentry, i = (n-1); i >= 0; i--, ds = ds->d_parent)
-		wnames[i] = ds->d_name.name;
-
-	*names = wnames;
-	return n;
-err_out:
-	return -ENOMEM;
-}
-
-static struct p9_fid *v9fs_fid_lookup_with_uid(struct dentry *dentry,
-					       kuid_t uid, int any)
-{
-	struct dentry *ds;
-	const unsigned char **wnames, *uname;
-	int i, n, l, access;
+	const unsigned char *uname;
+	int access;
 	struct v9fs_session_info *v9ses;
-	struct p9_fid *fid, *root_fid, *old_fid;
+	struct p9_fid *fid;
 
 	v9ses = v9fs_dentry2v9ses(dentry);
 	access = v9ses->flags & V9FS_ACCESS_MASK;
 	fid = v9fs_fid_find(dentry, uid, any);
-	if (fid)
-		return fid;
-	/*
-	 * we don't have a matching fid. To do a TWALK we need
-	 * parent fid. We need to prevent rename when we want to
-	 * look at the parent.
-	 */
-	down_read(&v9ses->rename_sem);
-	ds = dentry->d_parent;
-	fid = v9fs_fid_find(ds, uid, any);
-	if (fid) {
-		/* Found the parent fid do a lookup with that */
-		old_fid = fid;
-
-		fid = p9_client_walk(old_fid, 1, &dentry->d_name.name, 1);
-		p9_fid_put(old_fid);
-		goto fid_out;
-	}
-	up_read(&v9ses->rename_sem);
-
-	/* start from the root and try to do a lookup */
-	root_fid = v9fs_fid_find(dentry->d_sb->s_root, uid, any);
-	if (!root_fid) {
+	if ((!fid) && (dentry->d_sb->s_root == dentry)) { 
 		/* the user is not attached to the fs yet */
 		if (access == V9FS_ACCESS_SINGLE)
 			return ERR_PTR(-EPERM);
@@ -216,63 +166,22 @@ static struct p9_fid *v9fs_fid_lookup_with_uid(struct dentry *dentry,
 		if (IS_ERR(fid))
 			return fid;
 
-		root_fid = p9_fid_get(fid);
+		fid = p9_fid_get(fid);
 		v9fs_fid_add(dentry->d_sb->s_root, &fid);
 	}
-	/* If we are root ourself just return that */
-	if (dentry->d_sb->s_root == dentry)
-		return root_fid;
+	if (fid) {
+		*wn = n;
+		if(n>0) {
+			*wnames = kmalloc_array(n, sizeof(char *), GFP_KERNEL);
+			if (!*wnames)
+				return ERR_PTR(-ENOMEM);
+			*wnames[n-1] = dentry->d_name.name;	
+		}
+ 		return fid;
+	}
 
-	/*
-	 * Do a multipath walk with attached root.
-	 * When walking parent we need to make sure we
-	 * don't have a parallel rename happening
-	 */
-	down_read(&v9ses->rename_sem);
-	n  = build_path_from_dentry(v9ses, dentry, &wnames);
-	if (n < 0) {
-		fid = ERR_PTR(n);
-		goto err_out;
-	}
-	fid = root_fid;
-	old_fid = root_fid;
-	i = 0;
-	while (i < n) {
-		l = min(n - i, P9_MAXWELEM);
-		/*
-		 * We need to hold rename lock when doing a multipath
-		 * walk to ensure none of the path components change
-		 */
-		fid = p9_client_walk(old_fid, l, &wnames[i],
-				     old_fid == root_fid /* clone */);
-		/* non-cloning walk will return the same fid */
-		if (fid != old_fid) {
-			p9_fid_put(old_fid);
-			old_fid = fid;
-		}
-		if (IS_ERR(fid)) {
-			kfree(wnames);
-			goto err_out;
-		}
-		i += l;
-	}
-	kfree(wnames);
-fid_out:
-	if (!IS_ERR(fid)) {
-		spin_lock(&dentry->d_lock);
-		if (d_unhashed(dentry)) {
-			spin_unlock(&dentry->d_lock);
-			p9_fid_put(fid);
-			fid = ERR_PTR(-ENOENT);
-		} else {
-			__add_fid(dentry, fid);
-			p9_fid_get(fid);
-			spin_unlock(&dentry->d_lock);
-		}
-	}
-err_out:
-	up_read(&v9ses->rename_sem);
-	return fid;
+	/* recurse up tree */
+	return v9fs_first_fid(dentry->d_parent, uid, any, wnames, wn, n+1);
 }
 
 /**
@@ -290,6 +199,9 @@ struct p9_fid *v9fs_fid_lookup(struct dentry *dentry)
 	kuid_t uid;
 	int  any, access;
 	struct v9fs_session_info *v9ses;
+	const unsigned char **wnames;
+	struct p9_fid *fid;
+	int wn;
 
 	v9ses = v9fs_dentry2v9ses(dentry);
 	access = v9ses->flags & V9FS_ACCESS_MASK;
@@ -311,6 +223,18 @@ struct p9_fid *v9fs_fid_lookup(struct dentry *dentry)
 		any = 0;
 		break;
 	}
-	return v9fs_fid_lookup_with_uid(dentry, uid, any);
+
+	fid = v9fs_fid_find(dentry, uid, any);
+	if (!fid) {
+		down_read(&v9ses->rename_sem);
+		fid = v9fs_first_fid(dentry, uid, any, &wnames, &wn, 0);
+		if ((!IS_ERR(fid)) && (wn>0)) {
+			fid = p9_client_walk(fid, wn, wnames, 1);
+			kfree(wnames);
+		}
+		up_read(&v9ses->rename_sem);
+	}
+
+	return fid;
 }
 

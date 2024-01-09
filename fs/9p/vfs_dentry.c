@@ -23,6 +23,24 @@
 #include "v9fs_vfs.h"
 #include "fid.h"
 
+struct clunk_work {
+	struct work_struct work;
+	void *fid_list;
+};
+
+static void v9fs_clunk_work_handler(struct work_struct *w)
+{
+	struct clunk_work *cw = container_of(w, struct clunk_work, work);
+	struct hlist_node *p, *n;
+
+	p9_debug(P9_DEBUG_VFS, " clunk work %p\n", w);
+
+	hlist_for_each_safe(p, n, (struct hlist_head *)&cw->fid_list)
+		p9_fid_put(hlist_entry(p, struct p9_fid, dlist));
+	
+	kfree(cw);
+}
+
 /**
  * v9fs_cached_dentry_delete - called when dentry refcount equals 0
  * @dentry:  dentry in question
@@ -30,8 +48,17 @@
  */
 static int v9fs_cached_dentry_delete(const struct dentry *dentry)
 {
-	p9_debug(P9_DEBUG_VFS, " dentry: %pd (%p)\n",
-		 dentry, dentry);
+	struct clunk_work *cw; 
+
+	p9_debug(P9_DEBUG_VFS, " dentry: %pd (%p)\n", dentry, dentry);
+
+	if(dentry->d_fsdata) {
+		cw = kzalloc(sizeof(struct clunk_work), GFP_KERNEL);
+		cw->fid_list = dentry->d_fsdata;
+		//dentry->d_fsdata = NULL;
+		INIT_WORK(&cw->work, v9fs_clunk_work_handler);
+		queue_work(system_wq, &cw->work);
+	}
 
 	/* Don't cache negative dentries */
 	if (d_really_is_negative(dentry))
@@ -47,13 +74,13 @@ static int v9fs_cached_dentry_delete(const struct dentry *dentry)
 
 static void v9fs_dentry_release(struct dentry *dentry)
 {
-	struct hlist_node *p, *n;
+	//struct hlist_node *p, *n;
 
 	p9_debug(P9_DEBUG_VFS, " dentry: %pd (%p)\n",
 		 dentry, dentry);
-	hlist_for_each_safe(p, n, (struct hlist_head *)&dentry->d_fsdata)
-		p9_fid_put(hlist_entry(p, struct p9_fid, dlist));
-	dentry->d_fsdata = NULL;
+	
+	//hlist_for_each_safe(p, n, (struct hlist_head *)&dentry->d_fsdata)
+	//	p9_fid_put(hlist_entry(p, struct p9_fid, dlist));
 }
 
 static int v9fs_lookup_revalidate(struct dentry *dentry, unsigned int flags)

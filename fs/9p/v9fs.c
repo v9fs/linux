@@ -456,6 +456,13 @@ struct p9_fid *v9fs_session_init(struct v9fs_session_info *v9ses,
 		v9ses->flags &= ~V9FS_ACL_MASK;
 	}
 
+	v9ses->wq = alloc_workqueue("9p", WQ_UNBOUND, 0);
+	if (!v9ses->wq) {
+		p9_debug(P9_DEBUG_ERROR, "Couldn't allocated workqueue\n");
+		rc = PTR_ERR(v9ses->wq);
+		goto err_clnt;
+	}
+
 	fid = p9_client_attach(v9ses->clnt, NULL, v9ses->uname, INVALID_UID,
 							v9ses->aname);
 	if (IS_ERR(fid)) {
@@ -502,6 +509,9 @@ err_names:
 
 void v9fs_session_close(struct v9fs_session_info *v9ses)
 {
+	if (v9ses->wq)
+		destroy_workqueue(v9ses->wq);
+
 	if (v9ses->clnt) {
 		p9_client_destroy(v9ses->clnt);
 		v9ses->clnt = NULL;

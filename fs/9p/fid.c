@@ -140,7 +140,7 @@ static struct p9_fid *v9fs_fid_find(struct dentry *dentry, kuid_t uid, int any)
 }
 
 static struct p9_fid *v9fs_first_fid(struct dentry *dentry,
-					       kuid_t uid, int any, const unsigned char ***wnames, 
+					       kuid_t uid, int any, const unsigned char ***wnames,
 						   int *wn, int n)
 {
 	const unsigned char *uname;
@@ -151,7 +151,7 @@ static struct p9_fid *v9fs_first_fid(struct dentry *dentry,
 	v9ses = v9fs_dentry2v9ses(dentry);
 	access = v9ses->flags & V9FS_ACCESS_MASK;
 	fid = v9fs_fid_find(dentry, uid, any);
-	if ((!fid) && (dentry->d_sb->s_root == dentry)) { 
+	if ((!fid) && (dentry->d_sb->s_root == dentry)) {
 		/* the user is not attached to the fs yet */
 		if (access == V9FS_ACCESS_SINGLE)
 			return ERR_PTR(-EPERM);
@@ -171,13 +171,13 @@ static struct p9_fid *v9fs_first_fid(struct dentry *dentry,
 	}
 	if (fid) {
 		*wn = n;
-		if(n>0) {
+		if (n > 0) {
 			*wnames = kmalloc_array(n, sizeof(char *), GFP_KERNEL);
 			if (!*wnames)
 				return ERR_PTR(-ENOMEM);
-			*wnames[n-1] = dentry->d_name.name;	
+			*wnames[n-1] = dentry->d_name.name;
 		}
- 		return fid;
+		return fid;
 	}
 
 	/* recurse up tree */
@@ -228,7 +228,7 @@ struct p9_fid *v9fs_fid_lookup(struct dentry *dentry)
 	if (!fid) {
 		down_read(&v9ses->rename_sem);
 		fid = v9fs_first_fid(dentry, uid, any, &wnames, &wn, 0);
-		if ((!IS_ERR(fid)) && (wn>0)) {
+		if ((!IS_ERR(fid)) && (wn > 0)) {
 			fid = p9_client_walk(fid, wn, wnames, 1);
 			kfree(wnames);
 		}

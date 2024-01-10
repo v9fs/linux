@@ -138,6 +138,7 @@ struct v9fs_inode {
 	struct p9_qid qid;
 	unsigned int cache_validity;
 	struct mutex v_mutex;
+	void *open_fids; /* fids to open files */
 };
 
 static inline struct v9fs_inode *V9FS_I(const struct inode *inode)

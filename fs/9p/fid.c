@@ -60,14 +60,13 @@ static bool v9fs_is_writeable(int mode)
 struct p9_fid *v9fs_fid_find_inode(struct inode *inode, bool want_writeable,
 	kuid_t uid, bool any)
 {
-	struct hlist_head *h;
 	struct p9_fid *fid, *ret = NULL;
+	struct v9fs_inode *v9inode = V9FS_I(inode);
 
 	p9_debug(P9_DEBUG_VFS, " inode: %p\n", inode);
 
 	spin_lock(&inode->i_lock);
-	h = (struct hlist_head *)&inode->i_private;
-	hlist_for_each_entry(fid, h, ilist) {
+	hlist_for_each_entry(fid, (struct hlist_head *)&v9inode->open_fids, ilist) {
 		if (any || uid_eq(fid->uid, uid)) {
 			if (want_writeable && !v9fs_is_writeable(fid->mode)) {
 				p9_debug(P9_DEBUG_VFS, " mode: %x not writeable?\n",
@@ -93,9 +92,10 @@ struct p9_fid *v9fs_fid_find_inode(struct inode *inode, bool want_writeable,
 void v9fs_open_fid_add(struct inode *inode, struct p9_fid **pfid)
 {
 	struct p9_fid *fid = *pfid;
+	struct v9fs_inode *v9inode = V9FS_I(inode);
 
 	spin_lock(&inode->i_lock);
-	hlist_add_head(&fid->ilist, (struct hlist_head *)&inode->i_private);
+	hlist_add_head(&fid->ilist, (struct hlist_head *)&v9inode->open_fids);
 	spin_unlock(&inode->i_lock);
 
 	*pfid = NULL;

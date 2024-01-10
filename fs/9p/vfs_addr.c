@@ -170,8 +170,7 @@ static int v9fs_vfs_write_folio_locked(struct folio *folio)
 
 	writeback_fid = v9fs_fid_find_inode(inode, true, INVALID_UID, true);
 	if (!writeback_fid) {
-		WARN_ONCE(1, "folio expected an open fid inode->i_private=%p\n",
-			inode->i_private);
+		WARN_ONCE(1, "folio expected an open fid inode %p\n", inode);
 		return -EINVAL;
 	}
 

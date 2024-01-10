@@ -244,6 +244,27 @@ done:
 	return res;
 }
 
+static int v9fs_drop_inode(struct inode *inode)
+{
+	struct v9fs_inode *v9inode = V9FS_I(inode);
+	struct hlist_node *p, *n;
+
+	p9_debug(P9_DEBUG_VFS, "%s: inode %p\n", __func__, inode);
+
+	if(v9inode->open_fids)
+		p9_debug(P9_DEBUG_VFS, "WARN: inode %p being dropped with open fids\n",
+			 inode);
+
+	spin_unlock(&inode->i_lock); /* HACK HACK HACK */
+	hlist_for_each_safe(p, n, (struct hlist_head *)&v9inode->transient_fids)
+		p9_fid_put(hlist_entry(p, struct p9_fid, dlist));
+	spin_lock(&inode->i_lock); /* HACK HACK HACK */
+	
+	v9inode->transient_fids = NULL;
+
+	return generic_drop_inode(inode);
+}
+
 static int v9fs_write_inode(struct inode *inode,
 			    struct writeback_control *wbc)
 {
@@ -278,6 +299,7 @@ static const struct super_operations v9fs_super_ops = {
 	.alloc_inode = v9fs_alloc_inode,
 	.free_inode = v9fs_free_inode,
 	.statfs = simple_statfs,
+	.drop_inode = v9fs_drop_inode,
 	.evict_inode = v9fs_evict_inode,
 	.show_options = v9fs_show_options,
 	.umount_begin = v9fs_umount_begin,
@@ -288,6 +310,7 @@ static const struct super_operations v9fs_super_ops_dotl = {
 	.alloc_inode = v9fs_alloc_inode,
 	.free_inode = v9fs_free_inode,
 	.statfs = v9fs_statfs,
+	.drop_inode = v9fs_drop_inode,
 	.evict_inode = v9fs_evict_inode,
 	.show_options = v9fs_show_options,
 	.umount_begin = v9fs_umount_begin,

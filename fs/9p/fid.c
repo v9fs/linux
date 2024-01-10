@@ -20,7 +20,15 @@
 
 static inline void __add_fid(struct dentry *dentry, struct p9_fid *fid)
 {
-	hlist_add_head(&fid->dlist, (struct hlist_head *)&dentry->d_fsdata);
+	struct inode *inode = d_inode(dentry);
+	struct v9fs_inode *v9inode = V9FS_I(inode);
+	spin_lock(&inode->i_lock);
+	if(inode)
+		hlist_add_head(&fid->dlist, 
+			(struct hlist_head *)&v9inode->transient_fids);
+	else
+		p9_debug(P9_DEBUG_VFS, "inode is NULL\n");
+	spin_unlock(&inode->i_lock);
 }
 
 
@@ -113,16 +121,18 @@ void v9fs_open_fid_add(struct inode *inode, struct p9_fid **pfid)
 static struct p9_fid *v9fs_fid_find(struct dentry *dentry, kuid_t uid, int any)
 {
 	struct p9_fid *fid, *ret;
+	struct inode *inode = d_inode(dentry);
+	struct v9fs_inode *v9inode = V9FS_I(inode);
 
 	p9_debug(P9_DEBUG_VFS, " dentry: %pd (%p) uid %d any %d\n",
 		 dentry, dentry, from_kuid(&init_user_ns, uid),
 		 any);
 	ret = NULL;
 	/* we'll recheck under lock if there's anything to look in */
-	if (dentry->d_fsdata) {
-		struct hlist_head *h = (struct hlist_head *)&dentry->d_fsdata;
+	if (v9inode->transient_fids) {
+		struct hlist_head *h = (struct hlist_head *)&v9inode->transient_fids;
 
-		spin_lock(&dentry->d_lock);
+		spin_lock(&inode->i_lock);
 		hlist_for_each_entry(fid, h, dlist) {
 			if (any || uid_eq(fid->uid, uid)) {
 				ret = fid;
@@ -130,7 +140,7 @@ static struct p9_fid *v9fs_fid_find(struct dentry *dentry, kuid_t uid, int any)
 				break;
 			}
 		}
-		spin_unlock(&dentry->d_lock);
+		spin_unlock(&inode->i_lock);
 	} else {
 		if (dentry->d_inode)
 			ret = v9fs_fid_find_inode(dentry->d_inode, false, uid, any);

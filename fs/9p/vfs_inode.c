@@ -267,6 +267,7 @@ int v9fs_init_inode(struct v9fs_session_info *v9ses,
 	inode->i_mapping->a_ops = &v9fs_addr_operations;
 	inode->i_private = NULL;
 	v9inode->open_fids = NULL;
+	v9inode->transient_fids = NULL;
 
 	switch (mode & S_IFMT) {
 	case S_IFIFO:

@@ -32,6 +32,14 @@ static int v9fs_cached_dentry_delete(const struct dentry *dentry)
 {
 	p9_debug(P9_DEBUG_VFS, " dentry: %pd (%p)\n",
 		 dentry, dentry);
+	struct inode *inode = d_inode(dentry);
+
+	/* we need inode */
+	if(inode) {
+		spin_lock(&inode->i_lock);
+		v9fs_clunk_transient(inode);
+		spin_unlock(&inode->i_lock);
+	}
 
 	/* Don't cache negative dentries */
 	if (d_really_is_negative(dentry))

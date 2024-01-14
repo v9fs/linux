@@ -129,6 +129,7 @@ struct p9_client {
 /**
  * struct p9_fid - file system entity handle
  * @clnt: back pointer to instantiating &p9_client
+ * @source: where the fid originated from
  * @fid: numeric identifier for this handle
  * @mode: current mode of this fid (enum?)
  * @qid: the &p9_qid server identifier this handle points to
@@ -140,13 +141,14 @@ struct p9_client {
  * TODO: This needs lots of explanation.
  */
 enum fid_source {
-	FID_FROM_OTHER,
-	FID_FROM_INODE,
-	FID_FROM_DENTRY,
+	FID_NONE,	/* fid marked for clunk */
+	FID_ATTACH,	/* fid aquired from an attach, usually SB */
+	FID_CLONED,	/* transient fid aquired from a clone */
 };
 
 struct p9_fid {
 	struct p9_client *clnt;
+	enum fid_source source;
 	u32 fid;
 	refcount_t count;
 	int mode;
@@ -275,6 +277,7 @@ static inline int p9_fid_put(struct p9_fid *fid)
 	if (!refcount_dec_and_test(&fid->count))
 		return 0;
 
+	fid->source = FID_NONE;
 	return p9_client_clunk(fid);
 }
 

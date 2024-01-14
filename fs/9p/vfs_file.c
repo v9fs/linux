@@ -53,6 +53,7 @@ int v9fs_file_open(struct inode *inode, struct file *file)
 					v9fs_proto_dotu(v9ses));
 	fid = file->private_data;
 	if (!fid) {
+		p9_debug(P9_DEBUG_VFS, "fid was NULL, trying to re-establish\n")
 		fid = v9fs_fid_clone(file_dentry(file));
 		if (IS_ERR(fid))
 			return PTR_ERR(fid);

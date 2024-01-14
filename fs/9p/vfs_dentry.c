@@ -47,7 +47,6 @@ static int v9fs_cached_dentry_delete(const struct dentry *dentry)
 
 static void v9fs_dentry_release(struct dentry *dentry)
 {
-
 	p9_debug(P9_DEBUG_VFS, " dentry: %pd (%p)\n",
 		 dentry, dentry);
 }

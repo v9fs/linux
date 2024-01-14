@@ -477,6 +477,13 @@ struct p9_fid *v9fs_session_init(struct v9fs_session_info *v9ses,
 			goto err_clnt;
 	}
 #endif
+
+	v9ses->wq = create_workqueue(dev_name);
+	if(!v9ses->wq) {
+		rc = PTR_ERR(v9ses->wq);
+		goto err_clnt;
+	}	
+	
 	spin_lock(&v9fs_sessionlist_lock);
 	list_add(&v9ses->slist, &v9fs_sessionlist);
 	spin_unlock(&v9fs_sessionlist_lock);
@@ -502,6 +509,11 @@ err_names:
 
 void v9fs_session_close(struct v9fs_session_info *v9ses)
 {
+	if(v9ses->wq) {
+		drain_workqueue(v9ses->wq);
+		destroy_workqueue(v9ses->wq);
+	}
+
 	if (v9ses->clnt) {
 		p9_client_destroy(v9ses->clnt);
 		v9ses->clnt = NULL;
@@ -529,6 +541,7 @@ void v9fs_session_close(struct v9fs_session_info *v9ses)
 void v9fs_session_cancel(struct v9fs_session_info *v9ses)
 {
 	p9_debug(P9_DEBUG_ERROR, "cancel session %p\n", v9ses);
+	drain_workqueue(v9ses->wq);
 	p9_client_disconnect(v9ses->clnt);
 }
 
@@ -543,6 +556,7 @@ void v9fs_session_begin_cancel(struct v9fs_session_info *v9ses)
 {
 	p9_debug(P9_DEBUG_ERROR, "begin cancel session %p\n", v9ses);
 	p9_client_begin_disconnect(v9ses->clnt);
+	flush_workqueue(v9ses->wq);
 }
 
 static struct kobject *v9fs_kobj;

@@ -255,8 +255,8 @@ v9fs_vfs_atomic_open_dotl(struct inode *dir, struct dentry *dentry,
 	/* Now set the ACL based on the default value */
 	v9fs_set_create_acl(inode, fid, dacl, pacl);
 
-	v9fs_fid_add(dentry, &fid);
 	d_instantiate(dentry, inode);
+	v9fs_fid_add(dentry, &fid);
 
 	/* Since we are opening a file, assign the open fid to the file */
 	err = finish_open(file, dentry, generic_file_open);
@@ -348,9 +348,10 @@ static int v9fs_vfs_mkdir_dotl(struct mnt_idmap *idmap,
 			 err);
 		goto error;
 	}
-	v9fs_fid_add(dentry, &fid);
 	v9fs_set_create_acl(inode, fid, dacl, pacl);
 	d_instantiate(dentry, inode);
+	v9fs_fid_add(dentry, &fid);
+
 	err = 0;
 	inc_nlink(dir);
 	v9fs_invalidate_inode_attr(dir);
@@ -784,8 +785,9 @@ v9fs_vfs_mknod_dotl(struct mnt_idmap *idmap, struct inode *dir,
 		goto error;
 	}
 	v9fs_set_create_acl(inode, fid, dacl, pacl);
-	v9fs_fid_add(dentry, &fid);
 	d_instantiate(dentry, inode);
+	v9fs_fid_add(dentry, &fid);
+
 	err = 0;
 error:
 	p9_fid_put(fid);

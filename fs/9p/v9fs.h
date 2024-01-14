@@ -10,6 +10,7 @@
 
 #include <linux/backing-dev.h>
 #include <linux/netfs.h>
+#include <linux/workqueue.h>
 
 /**
  * enum p9_session_flags - option flags for each 9P session
@@ -113,6 +114,7 @@ struct v9fs_session_info {
 	unsigned short debug;
 	unsigned int afid;
 	unsigned int cache;
+	struct workqueue_struct *wq; /* workqueue for async clunks */
 #ifdef CONFIG_9P_FSCACHE
 	char *cachetag;
 	struct fscache_volume *fscache;

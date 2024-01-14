@@ -712,7 +712,7 @@ struct dentry *v9fs_vfs_lookup(struct inode *dir, struct dentry *dentry,
 	 * inode. But with cache disabled, lookup should do this.
 	 */
 	name = dentry->d_name.name;
-	fid = p9_client_walk(dfid, 1, &name, dfid->source == FID_ATTACH);
+	fid = p9_client_walk(dfid, 1, &name, 1);
 	p9_fid_put(dfid);
 
 	if (fid == ERR_PTR(-ENOENT))

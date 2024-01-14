@@ -109,7 +109,6 @@ void v9fs_open_fid_add(struct inode *inode, struct p9_fid **pfid)
 	*pfid = NULL;
 }
 
-
 /**
  * v9fs_fid_find - retrieve a fid that belongs to the specified uid
  * @dentry: dentry to look for fid in
@@ -155,26 +154,31 @@ static struct p9_fid *v9fs_first_fid(struct dentry *dentry,
 	struct v9fs_session_info *v9ses;
 	struct p9_fid *fid;
 
+	p9_debug(P9_DEBUG_VFS, " dentry: %pd (%p)\n", dentry, dentry);
+
 	v9ses = v9fs_dentry2v9ses(dentry);
 	access = v9ses->flags & V9FS_ACCESS_MASK;
 	fid = v9fs_fid_find(dentry, uid, any);
-	if ((!fid) && (dentry->d_sb->s_root == dentry)) { 
-		/* the user is not attached to the fs yet */
-		if (access == V9FS_ACCESS_SINGLE)
-			return ERR_PTR(-EPERM);
+	if (dentry->d_sb->s_root == dentry) {
+		if (!fid) {
+			/* the user is not attached to the fs yet */
+			if (access == V9FS_ACCESS_SINGLE)
+				return ERR_PTR(-EPERM);
 
-		if (v9fs_proto_dotu(v9ses) || v9fs_proto_dotl(v9ses))
-			uname = NULL;
-		else
-			uname = v9ses->uname;
+			if (v9fs_proto_dotu(v9ses) || v9fs_proto_dotl(v9ses))
+				uname = NULL;
+			else
+				uname = v9ses->uname;
 
-		fid = p9_client_attach(v9ses->clnt, NULL, uname, uid,
-				       v9ses->aname);
-		if (IS_ERR(fid))
-			return fid;
+			fid = p9_client_attach(v9ses->clnt, NULL, uname, uid,
+						v9ses->aname);
+			if (IS_ERR(fid))
+				return fid;
 
-		fid = p9_fid_get(fid);
-		v9fs_fid_add(dentry->d_sb->s_root, &fid);
+			fid = p9_fid_get(fid);
+			v9fs_fid_add(dentry->d_sb->s_root, &fid);
+		}
+		return fid;
 	}
 	if (fid) {
 		*wn = n;
@@ -231,16 +235,13 @@ struct p9_fid *v9fs_fid_lookup(struct dentry *dentry)
 		break;
 	}
 
-	fid = v9fs_fid_find(dentry, uid, any);
-	if (!fid) {
-		down_read(&v9ses->rename_sem);
-		fid = v9fs_first_fid(dentry, uid, any, &wnames, &wn, 0);
-		if ((!IS_ERR(fid)) && (wn>0)) {
-			fid = p9_client_walk(fid, wn, wnames, 1);
-			kfree(wnames);
-		}
-		up_read(&v9ses->rename_sem);
+	down_read(&v9ses->rename_sem);
+	fid = v9fs_first_fid(dentry, uid, any, &wnames, &wn, 0);
+	if ((!IS_ERR(fid)) && (wn>0)) {
+		fid = p9_client_walk(fid, wn, wnames, 1);
+		kfree(wnames);
 	}
+	up_read(&v9ses->rename_sem);
 
 	return fid;
 }

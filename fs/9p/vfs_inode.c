@@ -243,6 +243,43 @@ void v9fs_free_inode(struct inode *inode)
 	kmem_cache_free(v9fs_inode_cache, V9FS_I(inode));
 }
 
+struct clunk_work {
+	struct work_struct work;
+	void *fid_list;
+};
+
+static void v9fs_clunk_work_handler(struct work_struct *w)
+{
+	struct clunk_work *cw = container_of(w, struct clunk_work, work);
+	struct hlist_node *p, *n;
+
+	p9_debug(P9_DEBUG_VFS, " clunk work %p\n", w);
+
+	hlist_for_each_safe(p, n, (struct hlist_head *)&cw->fid_list)
+		p9_fid_put(hlist_entry(p, struct p9_fid, dlist));
+
+	kfree(cw);
+}
+
+/* clunk method for transient fids - call with inode locked */
+void v9fs_clunk_transient(struct inode *inode)
+{
+	struct v9fs_inode *v9inode = V9FS_I(inode);
+	struct clunk_work *cw;
+
+	/* clunk all the transient fids */
+	if (v9inode->transient_fids) {
+		cw = kzalloc(sizeof(struct clunk_work), GFP_KERNEL);
+		if (cw) {
+			cw->fid_list = v9inode->transient_fids;
+			v9inode->transient_fids = NULL;
+			INIT_WORK(&cw->work, v9fs_clunk_work_handler);
+			queue_work(v9fs_inode2v9ses(inode)->wq, &cw->work);
+		} else 
+			p9_debug(P9_DEBUG_VFS, "ENOMEM\n");
+	}
+}
+
 /*
  * Set parameters for the netfs library
  */
@@ -677,6 +714,7 @@ struct dentry *v9fs_vfs_lookup(struct inode *dir, struct dentry *dentry,
 	name = dentry->d_name.name;
 	fid = p9_client_walk(dfid, 1, &name, 1);
 	p9_fid_put(dfid);
+
 	if (fid == ERR_PTR(-ENOENT))
 		inode = NULL;
 	else if (IS_ERR(fid))

@@ -123,16 +123,16 @@ static struct p9_fid *v9fs_fid_find(struct dentry *dentry, kuid_t uid, int any)
 	struct p9_fid *fid, *ret;
 	struct inode *inode = d_inode(dentry);
 	struct v9fs_inode *v9inode = V9FS_I(inode);
+	struct hlist_head *h;
 
-	p9_debug(P9_DEBUG_VFS, " dentry: %pd (%p) uid %d any %d\n",
-		 dentry, dentry, from_kuid(&init_user_ns, uid),
+	p9_debug(P9_DEBUG_VFS, " dentry: %pd (%p) inode (%p) uid %d any %d\n",
+		 dentry, dentry, inode, from_kuid(&init_user_ns, uid),
 		 any);
 	ret = NULL;
 	/* we'll recheck under lock if there's anything to look in */
 	if (v9inode->transient_fids) {
-		struct hlist_head *h = (struct hlist_head *)&v9inode->transient_fids;
-
 		spin_lock(&inode->i_lock);
+		h = (struct hlist_head *)&v9inode->transient_fids;
 		hlist_for_each_entry(fid, h, dlist) {
 			if (any || uid_eq(fid->uid, uid)) {
 				ret = fid;
@@ -141,10 +141,7 @@ static struct p9_fid *v9fs_fid_find(struct dentry *dentry, kuid_t uid, int any)
 			}
 		}
 		spin_unlock(&inode->i_lock);
-	} else {
-		if (dentry->d_inode)
-			ret = v9fs_fid_find_inode(dentry->d_inode, false, uid, any);
-	}
+	} 
 
 	return ret;
 }

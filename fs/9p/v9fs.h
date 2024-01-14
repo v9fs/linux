@@ -190,6 +190,7 @@ extern const struct inode_operations v9fs_symlink_inode_operations_dotl;
 extern const struct netfs_request_ops v9fs_req_ops;
 extern struct inode *v9fs_fid_iget_dotl(struct super_block *sb,
 					struct p9_fid *fid);
+extern void v9fs_clunk_transient(struct inode *inode);
 
 /* other default globals */
 #define V9FS_PORT	564

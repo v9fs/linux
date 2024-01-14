@@ -154,6 +154,7 @@ static struct dentry *v9fs_mount(struct file_system_type *fs_type, int flags,
 	retval = v9fs_get_acl(inode, fid);
 	if (retval)
 		goto release_sb;
+	fid->source = FID_ATTACH;
 	v9fs_fid_add(root, &fid);
 
 	p9_debug(P9_DEBUG_VFS, " simple set mount, return 0\n");
@@ -244,29 +245,9 @@ done:
 	return res;
 }
 
-struct clunk_work {
-	struct work_struct work;
-	void *fid_list;
-};
-
-static void v9fs_clunk_work_handler(struct work_struct *w)
-{
-	struct clunk_work *cw = container_of(w, struct clunk_work, work);
-	struct hlist_node *p, *n;
-
-	p9_debug(P9_DEBUG_VFS, " clunk work %p\n", w);
-
-	hlist_for_each_safe(p, n, (struct hlist_head *)&cw->fid_list)
-		p9_fid_put(hlist_entry(p, struct p9_fid, dlist));
-
-	kfree(cw);
-}
-
 static int v9fs_drop_inode(struct inode *inode)
 {
 	struct v9fs_inode *v9inode = V9FS_I(inode);
-	struct v9fs_session_info *v9ses = v9fs_inode2v9ses(inode);
-	struct clunk_work *cw;
 
 	p9_debug(P9_DEBUG_VFS, "%s: inode %p\n", __func__, inode);
 
@@ -274,20 +255,8 @@ static int v9fs_drop_inode(struct inode *inode)
 		p9_debug(P9_DEBUG_VFS, "WARN: inode %p being dropped with open fids\n",
 			 inode);
 
-	/* clunk all the transient fids */
-	if (v9inode->transient_fids) {
-		cw = kzalloc(sizeof(struct clunk_work), GFP_KERNEL);
-		if (!cw) {
-			p9_debug(P9_DEBUG_VFS, "ENOMEM\n");
-			goto out;
-		}
-		cw->fid_list = v9inode->transient_fids;
-		v9inode->transient_fids = NULL;
-		INIT_WORK(&cw->work, v9fs_clunk_work_handler);
-		queue_work(v9ses->wq, &cw->work);
-	}
+	v9fs_clunk_transient(inode);
 	
-out:
 	return generic_drop_inode(inode);
 }
 

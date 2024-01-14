@@ -1107,6 +1107,7 @@ struct p9_fid *p9_client_attach(struct p9_client *clnt, struct p9_fid *afid,
 		err = -ENOMEM;
 		goto error;
 	}
+	fid->source = FID_ATTACH;
 	fid->uid = n_uname;
 
 	req = p9_client_rpc(clnt, P9_TATTACH, "ddss?u", fid->fid,
@@ -1156,7 +1157,7 @@ struct p9_fid *p9_client_walk(struct p9_fid *oldfid, uint16_t nwname,
 			err = -ENOMEM;
 			goto error;
 		}
-
+		fid->source = FID_CLONED;
 		fid->uid = oldfid->uid;
 	} else {
 		fid = oldfid;

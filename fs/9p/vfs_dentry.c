@@ -65,6 +65,9 @@ static int v9fs_lookup_revalidate(struct dentry *dentry, unsigned int flags)
 	struct inode *inode;
 	struct v9fs_inode *v9inode;
 
+	p9_debug(P9_DEBUG_VFS, " dentry: %pd (%p)\n",
+		 dentry, dentry);
+
 	if (flags & LOOKUP_RCU)
 		return -ECHILD;
 
@@ -76,6 +79,9 @@ static int v9fs_lookup_revalidate(struct dentry *dentry, unsigned int flags)
 	if (v9inode->cache_validity & V9FS_INO_INVALID_ATTR) {
 		int retval;
 		struct v9fs_session_info *v9ses;
+
+		p9_debug(P9_DEBUG_VFS, " marked invalid: dentry: %pd (%p)\n",
+			dentry, dentry);
 
 		fid = v9fs_fid_lookup(dentry);
 		if (IS_ERR(fid))

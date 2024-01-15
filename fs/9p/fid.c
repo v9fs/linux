@@ -235,6 +235,8 @@ static struct p9_fid *v9fs_fid_lookup_with_uid(struct dentry *dentry,
 	 * When walking parent we need to make sure we
 	 * don't have a parallel rename happening
 	 */
+	p9_debug(P9_DEBUG_VFS, " MULTIWALK: dentry: %pd (%p) root_fid %p\n",
+		 dentry, dentry, root_fid);
 	down_read(&v9ses->rename_sem);
 	n  = build_path_from_dentry(v9ses, dentry, &wnames);
 	if (n < 0) {
@@ -255,7 +257,11 @@ static struct p9_fid *v9fs_fid_lookup_with_uid(struct dentry *dentry,
 		/* non-cloning walk will return the same fid */
 		if (fid != old_fid) {
 			p9_fid_put(old_fid);
+
 			old_fid = fid;
+		} else {
+			/* BUG: if its the same fid we need to update old dentry */
+			BUG();	 /* FIXME */
 		}
 		if (IS_ERR(fid)) {
 			kfree(wnames);

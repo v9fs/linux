@@ -9,3 +9,8 @@ pub use self::file::{File, LocalFile};
 
 mod kiocb;
 pub use self::kiocb::Kiocb;
+
+pub mod filesystem;
+pub mod inode;
+pub use self::filesystem::{FileSystem, MountParams, NewSuperBlock, Registration, Stat, SuperBlock};
+pub use self::inode::{DirEmitter, INode, INodeParams, INodeType, NewINode, Timespec};

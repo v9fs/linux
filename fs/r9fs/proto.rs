@@ -33,6 +33,14 @@ pub(crate) struct Qid {
     pub(crate) path: u64,
 }
 
+impl Qid {
+    /// Inode number for this file, as `fs/9p` computes it (`QID2INO` on 64-bit): servers may use
+    /// path 0, and readdir consumers skip entries whose inode number is 0.
+    pub(crate) fn ino(&self) -> u64 {
+        self.path.wrapping_add(2)
+    }
+}
+
 /// Writes a message body into a fixed-size buffer.
 pub(crate) struct Enc<'a> {
     buf: &'a mut [u8],

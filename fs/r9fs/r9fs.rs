@@ -119,7 +119,7 @@ fn make_inode(sb: &SuperBlock<R9fs>, fid: u32) -> Result<ARef<INode<R9fs>>> {
             return Err(e);
         }
     };
-    match sb.get_or_create_inode(attr.qid.path) {
+    match sb.get_or_create_inode(attr.qid.ino()) {
         Ok(Either::Existing(inode)) => {
             session.clunk(fid);
             Ok(inode)
@@ -268,7 +268,7 @@ impl FileSystem for R9fs {
             let mut d = Dec::new(&buf[..n]);
             while d.remaining() > 0 {
                 let ent = Dirent::decode(&mut d)?;
-                if !emitter.emit(ent.name, ent.qid.path, ent.typ.into()) {
+                if !emitter.emit(ent.name, ent.qid.ino(), ent.typ.into()) {
                     return Ok(());
                 }
                 emitter.set_pos(i64::try_from(ent.offset).map_err(|_| EIO)?);

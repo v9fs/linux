@@ -39,6 +39,11 @@ __rust_helper u16 rust_helper_virtio_cread16(struct virtio_device *vdev,
 	return virtio16_to_cpu(vdev, v);
 }
 
+__rust_helper bool rust_helper_virtio_has_vqs(struct virtio_device *vdev)
+{
+	return !list_empty(&vdev->vqs);
+}
+
 __rust_helper void rust_helper_virtio_del_vqs(struct virtio_device *vdev)
 {
 	vdev->config->del_vqs(vdev);

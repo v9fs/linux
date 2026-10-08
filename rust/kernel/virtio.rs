@@ -287,8 +287,15 @@ unsafe extern "C" fn probe_callback<T: Driver>(vdev: *mut bindings::virtio_devic
     match res {
         Ok(()) => 0,
         Err(e) => {
-            // SAFETY: The device is valid; deleting no or already-found queues is allowed.
-            unsafe { bindings::virtio_del_vqs(vdev) };
+            // `del_vqs` is not idempotent on every transport (virtio-mmio frees its IRQ
+            // unconditionally), so only call it while queues found by `probe` remain. The
+            // post-probe failure path above, and a failing `find_vqs`, leave none behind.
+            // SAFETY: The device is valid for the duration of probe.
+            unsafe {
+                if bindings::virtio_has_vqs(vdev) {
+                    bindings::virtio_del_vqs(vdev);
+                }
+            }
             e.to_errno()
         }
     }

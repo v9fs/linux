@@ -7,6 +7,9 @@
 //! [`FileSystem::Data`]; inodes carry [`FileSystem::INodeData`] and open files carry
 //! [`FileSystem::FileData`].
 //!
+//! The abstractions have no write paths, so every superblock is read-only: `SB_RDONLY` is
+//! forced at mount time and kept on remount. Remount does not re-parse file system options.
+//!
 //! Dentries are never cached once unused and inodes are dropped on last reference, so every
 //! path walk consults the file system again (the equivalent of `cache=none`).
 //!
@@ -201,7 +204,6 @@ impl<T: FileSystem> NewSuperBlock<'_, T> {
         }
         self
     }
-
 }
 
 /// A registered file system type.
@@ -400,12 +402,11 @@ impl<T: FileSystem> Tables<T> {
     }
 
     unsafe extern "C" fn reconfigure(fc: *mut bindings::fs_context) -> c_int {
-        let rdonly = bindings::SB_RDONLY as c_uint;
+        // Like erofs and squashfs: keep the superblock read-only instead of failing, so that
+        // remounts changing only other flags (legacy `mount(2)` always passes the full
+        // `MS_RMT_MASK`) still work.
         // SAFETY: The VFS passes a valid reconfiguration context.
-        let (flags, mask) = unsafe { ((*fc).sb_flags, (*fc).sb_flags_mask) };
-        if mask & rdonly != 0 && flags & rdonly == 0 {
-            return EROFS.to_errno();
-        }
+        unsafe { (*fc).sb_flags |= bindings::SB_RDONLY as c_uint };
         0
     }
 

@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config R9FS_FS
+	tristate "r9fs: Rust 9P2000.L file system over virtio (EXPERIMENTAL)"
+	depends on RUST && VIRTIO=y
+	help
+	  A read-only 9P2000.L client file system written in Rust, using its
+	  own virtio-9p transport. It is independent of the C v9fs (9P_FS)
+	  and its 9pnet transports. Mount with:
+
+	    mount -t r9fs <mount_tag> <dir>
+
+	  If both this and NET_9P_VIRTIO are loaded, a virtio-9p device binds
+	  to whichever driver registers first.
+
+	  If unsure, say N.

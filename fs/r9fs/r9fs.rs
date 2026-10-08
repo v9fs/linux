@@ -173,8 +173,7 @@ impl FileSystem for R9fs {
                 }
             }
         }
-        sb.set_magic(V9FS_MAGIC)
-            .set_blocksize_bits(12);
+        sb.set_magic(V9FS_MAGIC).set_blocksize_bits(12);
         Ok(KBox::new(Session::connect(&opts)?, GFP_KERNEL)?)
     }
 

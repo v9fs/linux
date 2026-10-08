@@ -75,12 +75,7 @@ impl Device {
     pub fn cread_bytes(&self, offset: u32, buf: &mut [u8]) {
         // SAFETY: The device is valid and `buf` is writable for its whole length.
         unsafe {
-            bindings::virtio_cread_bytes(
-                self.as_raw(),
-                offset,
-                buf.as_mut_ptr().cast(),
-                buf.len(),
-            )
+            bindings::virtio_cread_bytes(self.as_raw(), offset, buf.as_mut_ptr().cast(), buf.len())
         }
     }
 
@@ -155,12 +150,7 @@ impl VirtQueue {
     /// - The queue must still be live and the caller must serialise queue operations.
     /// - Every buffer must be physically contiguous kernel memory (e.g. `kmalloc`) and stay
     ///   valid and otherwise untouched until [`VirtQueue::get_buf`] returns `token`.
-    pub unsafe fn add_buf(
-        &self,
-        out: &[u8],
-        in_: &mut [u8],
-        token: NonNull<c_void>,
-    ) -> Result {
+    pub unsafe fn add_buf(&self, out: &[u8], in_: &mut [u8], token: NonNull<c_void>) -> Result {
         let mut sg_out = core::mem::MaybeUninit::<bindings::scatterlist>::uninit();
         let mut sg_in = core::mem::MaybeUninit::<bindings::scatterlist>::uninit();
         let out_len = u32::try_from(out.len()).map_err(|_| EINVAL)?;

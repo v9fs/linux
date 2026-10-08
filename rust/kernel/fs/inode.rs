@@ -369,7 +369,10 @@ impl<T: FileSystem> Tables<T> {
         // SAFETY: The dentry and its name are valid and stable during lookup.
         let name = unsafe {
             let qstr = &(*dentry).__bindgen_anon_1.d_name;
-            core::slice::from_raw_parts(qstr.name, qstr.__bindgen_anon_1.__bindgen_anon_1.len as usize)
+            core::slice::from_raw_parts(
+                qstr.name,
+                qstr.__bindgen_anon_1.__bindgen_anon_1.len as usize,
+            )
         };
         let inode = match T::lookup(parent, name) {
             // An inode of another superblock could outlive its `s_fs_info`.

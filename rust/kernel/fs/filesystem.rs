@@ -333,7 +333,9 @@ impl<T: FileSystem> Tables<T> {
             // SAFETY: `fs_private` was set in `init_fs_context` and is exclusively accessed
             // during parameter parsing.
             let params = unsafe { &mut *(*fc).fs_private.cast::<MountParams>() };
-            params.params.push((copy_bytes(key.to_bytes())?, value), GFP_KERNEL)?;
+            params
+                .params
+                .push((copy_bytes(key.to_bytes())?, value), GFP_KERNEL)?;
             Ok(())
         })();
         match res {

@@ -3,8 +3,8 @@
 //! 9P2000.L client session over one [`Channel`].
 
 use crate::proto::{
-    Attr, Dec, Qid, StatFs, GETATTR_BASIC, IOHDR, NOFID, TATTACH, TGETATTR, TLOPEN,
-    TREAD, TREADDIR, TREADLINK, TSTATFS, TVERSION, TWALK, VERSION_9P2000_L,
+    Attr, Dec, Qid, StatFs, GETATTR_BASIC, IOHDR, NOFID, TATTACH, TGETATTR, TLOPEN, TREAD,
+    TREADDIR, TREADLINK, TSTATFS, TVERSION, TWALK, VERSION_9P2000_L,
 };
 use crate::transport::Channel;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -156,7 +156,9 @@ impl Session {
     }
 
     fn read_into(&self, typ: u8, fid: u32, offset: u64, out: &mut [u8]) -> Result<usize> {
-        let count = u32::try_from(out.len()).unwrap_or(u32::MAX).min(self.max_io());
+        let count = u32::try_from(out.len())
+            .unwrap_or(u32::MAX)
+            .min(self.max_io());
         self.chan.rpc(
             typ,
             |e| {

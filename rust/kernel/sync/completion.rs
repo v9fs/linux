@@ -100,6 +100,26 @@ impl Completion {
         unsafe { bindings::complete_all(self.as_raw()) };
     }
 
+    /// Signal a single task waiting on this completion.
+    ///
+    /// May be called from atomic context.
+    #[inline]
+    pub fn complete(&self) {
+        // SAFETY: `self.as_raw()` is a pointer to a valid `struct completion`.
+        unsafe { bindings::complete(self.as_raw()) };
+    }
+
+    /// Reset the completion to the not-done state so it can be reused.
+    ///
+    /// The caller must ensure that no task is waiting on the completion and that no concurrent
+    /// [`Completion::complete`] call is meant for the previous use; otherwise that signal is lost
+    /// or attributed to the next use.
+    #[inline]
+    pub fn reinit(&self) {
+        // SAFETY: `self.as_raw()` is a pointer to a valid `struct completion`.
+        unsafe { bindings::reinit_completion(self.as_raw()) };
+    }
+
     /// Wait for completion of a task.
     ///
     /// This method waits for the completion of a task; it is not interruptible and there is no

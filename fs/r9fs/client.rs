@@ -3,7 +3,7 @@
 //! 9P2000.L client session over one [`Channel`].
 
 use crate::proto::{
-    Attr, Dec, Qid, StatFs, GETATTR_BASIC, IOHDR, NOFID, TATTACH, TCLUNK, TGETATTR, TLOPEN,
+    Attr, Dec, Qid, StatFs, GETATTR_BASIC, IOHDR, NOFID, TATTACH, TGETATTR, TLOPEN,
     TREAD, TREADDIR, TREADLINK, TSTATFS, TVERSION, TWALK, VERSION_9P2000_L,
 };
 use crate::transport::Channel;
@@ -204,7 +204,7 @@ impl Session {
 
     /// Releases `fid` on the server. Errors are ignored: the fid is gone either way.
     pub(crate) fn clunk(&self, fid: u32) {
-        let _ = self.chan.rpc(TCLUNK, |e| e.u32(fid), |_| Ok(()));
+        self.chan.clunk(fid);
     }
 }
 

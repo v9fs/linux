@@ -7,6 +7,11 @@ __rust_helper void rust_helper_mutex_lock(struct mutex *lock)
 	mutex_lock(lock);
 }
 
+__rust_helper int rust_helper_mutex_lock_killable(struct mutex *lock)
+{
+	return mutex_lock_killable(lock);
+}
+
 __rust_helper int rust_helper_mutex_trylock(struct mutex *lock)
 {
 	return mutex_trylock(lock);

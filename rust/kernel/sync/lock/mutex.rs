@@ -94,6 +94,24 @@ pub type Mutex<T> = super::Lock<T, MutexBackend>;
 /// [`Guard`]: super::Guard
 pub type MutexGuard<'a, T> = super::Guard<'a, T, MutexBackend>;
 
+impl<T: ?Sized> Mutex<T> {
+    /// Acquires the lock, or fails with [`EINTR`] if the current task receives a fatal signal
+    /// while waiting for it.
+    ///
+    /// [`EINTR`]: crate::error::code::EINTR
+    #[inline]
+    pub fn lock_killable(&self) -> crate::error::Result<MutexGuard<'_, T>> {
+        // SAFETY: The constructor of the type calls `init`, so the existence of the object proves
+        // that `init` was called.
+        let ret = unsafe { bindings::mutex_lock_killable(self.state.get()) };
+        if ret != 0 {
+            return Err(crate::error::code::EINTR);
+        }
+        // SAFETY: The lock was just acquired.
+        Ok(unsafe { super::Guard::new(self, ()) })
+    }
+}
+
 /// A kernel `struct mutex` lock backend.
 pub struct MutexBackend;
 

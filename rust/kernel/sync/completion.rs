@@ -6,7 +6,7 @@
 //!
 //! C header: [`include/linux/completion.h`](srctree/include/linux/completion.h)
 
-use crate::{bindings, prelude::*, types::Opaque};
+use crate::{bindings, error::to_result, prelude::*, types::Opaque};
 
 /// Synchronization primitive to signal when a certain task has been completed.
 ///
@@ -130,5 +130,16 @@ impl Completion {
     pub fn wait_for_completion(&self) {
         // SAFETY: `self.as_raw()` is a pointer to a valid `struct completion`.
         unsafe { bindings::wait_for_completion(self.as_raw()) };
+    }
+
+    /// Wait for completion of a task, or until the current task receives a fatal signal.
+    ///
+    /// Returns [`ERESTARTSYS`] if interrupted by a fatal signal.
+    ///
+    /// [`ERESTARTSYS`]: crate::error::code::ERESTARTSYS
+    #[inline]
+    pub fn wait_for_completion_killable(&self) -> Result {
+        // SAFETY: `self.as_raw()` is a pointer to a valid `struct completion`.
+        to_result(unsafe { bindings::wait_for_completion_killable(self.as_raw()) })
     }
 }

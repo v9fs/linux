@@ -6,9 +6,20 @@
 //! mount at a time and carries one request at a time: the channel mutex is held from
 //! submission until the reply is consumed, so a single tag suffices and the virtqueue is never
 //! accessed concurrently.
+//!
+//! Waiting for a reply is killable. A killed waiter leaves its request posted (the buffers stay
+//! with the device) and marks it pending; the next user of the channel reaps that reply before
+//! posting a new request. Device removal wakes every waiter, which then fails with `EIO`.
+//!
+//! Clunks never wait: one that finds the channel busy or a request pending is queued and sent
+//! before the next request. File release on exit of a killed task therefore does not block on
+//! the abandoned reply.
 
-use crate::proto::{Dec, Enc, HDR, NOTAG, RLERROR, TVERSION};
-use core::ptr::NonNull;
+use crate::proto::{Dec, Enc, HDR, NOTAG, RLERROR, TCLUNK, TVERSION};
+use core::{
+    ptr::NonNull,
+    sync::atomic::{AtomicBool, Ordering},
+};
 use kernel::{
     new_mutex,
     prelude::*,
@@ -32,6 +43,10 @@ struct State {
     dead: bool,
     /// A mount currently owns the channel.
     in_use: bool,
+    /// A request whose waiter was killed is still posted; its reply has not been reaped.
+    pending: bool,
+    /// Length of the last reaped reply.
+    reply_len: usize,
     tbuf: KVec<u8>,
     rbuf: KVec<u8>,
 }
@@ -41,8 +56,14 @@ struct State {
 pub(crate) struct Channel {
     tag: KVec<u8>,
     vq: VirtQueue,
+    /// Set by device removal before waking all waiters; checked without the state mutex,
+    /// which a waiter holds.
+    removed: AtomicBool,
     #[pin]
     state: Mutex<State>,
+    /// Fids whose clunk was deferred; only taken briefly, never across a wait.
+    #[pin]
+    deferred: Mutex<KVec<u32>>,
     #[pin]
     done: Completion,
 }
@@ -58,13 +79,14 @@ impl Channel {
             .clone();
         drop(chans);
 
-        let mut st = chan.state.lock();
+        let mut st = chan.state.lock_killable()?;
         if st.dead {
             return Err(ENODEV);
         }
         if st.in_use {
             return Err(EBUSY);
         }
+        chan.reap(&mut st)?;
         st.tbuf = KVec::from_elem(0u8, msize as usize, GFP_KERNEL)?;
         st.rbuf = KVec::from_elem(0u8, msize as usize, GFP_KERNEL)?;
         st.in_use = true;
@@ -80,7 +102,7 @@ impl Channel {
     pub(crate) fn release(&self) {
         let mut st = self.state.lock();
         st.in_use = false;
-        if !st.dead {
+        if !st.dead && !st.pending {
             st.tbuf = KVec::new();
             st.rbuf = KVec::new();
         }
@@ -93,6 +115,32 @@ impl Channel {
         st.rbuf.truncate(msize as usize);
     }
 
+    /// Waits for the reply to the posted request, if any, and records its length.
+    ///
+    /// On a fatal signal the request stays pending and `EINTR` is returned; on device removal
+    /// the channel becomes dead and `EIO` is returned.
+    fn reap(&self, st: &mut State) -> Result {
+        while st.pending {
+            // SAFETY: Callers hold the state mutex and have checked `!dead`; `remove` sets `dead`
+            // under that mutex before the queue is deleted, so the queue is live and serialised.
+            if let Some((_, len)) = unsafe { self.vq.get_buf() } {
+                st.pending = false;
+                st.reply_len = len as usize;
+                break;
+            }
+            // `remove` sets `removed` before `complete_all`, and `reinit` only runs with no
+            // request posted, so either this load sees the flag or the wait below returns.
+            if self.removed.load(Ordering::Acquire) {
+                st.dead = true;
+                return Err(EIO);
+            }
+            if self.done.wait_for_completion_killable().is_err() {
+                return Err(EINTR);
+            }
+        }
+        Ok(())
+    }
+
     /// Sends a `typ` request whose body `enc` writes and decodes the reply body with `dec`.
     ///
     /// `Rlerror` replies become the server's errno; any other reply type than `typ + 1`, a tag
@@ -103,11 +151,66 @@ impl Channel {
         enc: impl FnOnce(&mut Enc<'_>) -> Result,
         dec: impl FnOnce(&mut Dec<'_>) -> Result<R>,
     ) -> Result<R> {
-        let mut guard = self.state.lock();
+        let mut guard = self.state.lock_killable()?;
         let st = &mut *guard;
-        if st.dead {
+        if st.dead || self.removed.load(Ordering::Acquire) {
             return Err(EIO);
         }
+        self.reap(st)?;
+        // A new session (`Tversion`) drops all fids of the previous one on the server.
+        self.flush_deferred(st, typ == TVERSION)?;
+        self.rpc_locked(st, typ, enc, dec)
+    }
+
+    /// Clunks `fid` without waiting for a busy channel or an abandoned reply.
+    pub(crate) fn clunk(&self, fid: u32) {
+        if let Some(mut guard) = self.state.try_lock() {
+            let st = &mut *guard;
+            if st.dead {
+                return;
+            }
+            if !st.pending {
+                let _ = self
+                    .flush_deferred(st, false)
+                    .and_then(|()| self.rpc_locked(st, TCLUNK, |e| e.u32(fid), |_| Ok(())));
+                return;
+            }
+        }
+        // On allocation failure the fid stays open on the server until the session ends.
+        let _ = self.deferred.lock().push(fid, GFP_KERNEL);
+    }
+
+    /// Sends the deferred clunks, or drops them if `discard`. Stops (keeping the rest queued)
+    /// when the channel dies or a waiter is killed.
+    fn flush_deferred(&self, st: &mut State, discard: bool) -> Result {
+        let fids = core::mem::take(&mut *self.deferred.lock());
+        if discard {
+            return Ok(());
+        }
+        for (i, &fid) in fids.iter().enumerate() {
+            let r = self.rpc_locked(st, TCLUNK, |e| e.u32(fid), |_| Ok(()));
+            if let Err(e) = r {
+                if st.pending || st.dead {
+                    let mut q = self.deferred.lock();
+                    for &f in &fids[i + 1..] {
+                        let _ = q.push(f, GFP_KERNEL);
+                    }
+                    return Err(e);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Posts one request and reaps its reply. The caller holds the state mutex, has checked
+    /// `!dead` and has reaped any pending request.
+    fn rpc_locked<R>(
+        &self,
+        st: &mut State,
+        typ: u8,
+        enc: impl FnOnce(&mut Enc<'_>) -> Result,
+        dec: impl FnOnce(&mut Dec<'_>) -> Result<R>,
+    ) -> Result<R> {
         let tag = if typ == TVERSION { NOTAG } else { 0 };
 
         let mut e = Enc::new(&mut st.tbuf, HDR);
@@ -119,22 +222,20 @@ impl Channel {
 
         let token = NonNull::from(&mut st.tbuf[0]).cast();
         self.done.reinit();
-        // SAFETY: The queue is live (`!dead`) and serialised by the channel mutex. Both buffers
-        // are `kmalloc` memory owned by `State`, which is neither touched nor freed while the
-        // mutex is held, and the request is reaped below before the mutex is released.
-        let len = unsafe {
+        // SAFETY: The queue is live (`!dead`), has no request posted (`reap` succeeded) and is
+        // serialised by the channel mutex. Both buffers are `kmalloc` memory owned by `State`;
+        // they are not touched until the reply is reaped and not freed while the request may
+        // still be posted (`release` keeps them for dead or pending channels).
+        unsafe {
             self.vq.add_buf(&st.tbuf[..size], &mut st.rbuf, token)?;
             if !self.vq.kick() {
                 st.dead = true;
                 return Err(EIO);
             }
-            loop {
-                self.done.wait_for_completion();
-                if let Some((_, len)) = self.vq.get_buf() {
-                    break len as usize;
-                }
-            }
-        };
+        }
+        st.pending = true;
+        self.reap(st)?;
+        let len = st.reply_len;
 
         let reply = st.rbuf.get(..len).ok_or(EIO)?;
         let mut d = Dec::new(reply);
@@ -186,9 +287,13 @@ impl virtio::Driver for Driver {
                 state <- new_mutex!(State {
                     dead: false,
                     in_use: false,
+                    pending: false,
+                    reply_len: 0,
                     tbuf: KVec::new(),
                     rbuf: KVec::new(),
                 }),
+                removed: AtomicBool::new(false),
+                deferred <- new_mutex!(KVec::new()),
                 done <- Completion::new(),
             }),
             GFP_KERNEL,
@@ -202,6 +307,10 @@ impl virtio::Driver for Driver {
     }
 
     fn remove(_dev: &Device, chan: ArcBorrow<'_, Channel>) {
+        // A surprise-removed device never completes a posted request; wake the waiter (which
+        // holds the state mutex) before taking the mutex below.
+        chan.removed.store(true, Ordering::Release);
+        chan.done.complete_all();
         let mut chans = CHANNELS.lock();
         if let Some(i) = chans.iter().position(|c| core::ptr::eq(&**c, &*chan)) {
             drop(chans.remove(i));

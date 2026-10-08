@@ -202,12 +202,6 @@ impl<T: FileSystem> NewSuperBlock<'_, T> {
         self
     }
 
-    /// Marks the superblock read-only.
-    pub fn set_read_only(&mut self) -> &mut Self {
-        // SAFETY: The superblock is exclusively ours during `fill_super`.
-        unsafe { (*self.sb).s_flags |= bindings::SB_RDONLY };
-        self
-    }
 }
 
 /// A registered file system type.
@@ -267,6 +261,7 @@ impl<T: FileSystem> Tables<T> {
         free: Some(Self::free),
         parse_param: Some(Self::parse_param),
         get_tree: Some(Self::get_tree),
+        reconfigure: Some(Self::reconfigure),
         ..pin_init::zeroed()
     };
 
@@ -367,6 +362,8 @@ impl<T: FileSystem> Tables<T> {
 
             // SAFETY: The new superblock is exclusively ours until `fill_super` returns.
             unsafe {
+                // These abstractions have no write paths, so every mount is read-only.
+                (*sb).s_flags |= bindings::SB_RDONLY;
                 (*sb).s_op = &Self::SUPER_OPS;
                 (*sb).s_maxbytes = i64::MAX;
                 (*sb).s_time_gran = 1;
@@ -384,6 +381,9 @@ impl<T: FileSystem> Tables<T> {
             // SAFETY: `s_fs_info` is now initialised for type `T`.
             let sbref = unsafe { SuperBlock::<T>::from_raw(sb) };
             let root = T::init_root(sbref)?;
+            if !core::ptr::eq(root.super_block(), sbref) {
+                return Err(EIO);
+            }
             // SAFETY: `d_make_root` consumes the inode reference, dropping it on failure.
             let dentry = unsafe { bindings::d_make_root(ARef::into_raw(root).as_ptr().cast()) };
             if dentry.is_null() {
@@ -397,6 +397,16 @@ impl<T: FileSystem> Tables<T> {
             Ok(()) => 0,
             Err(e) => e.to_errno(),
         }
+    }
+
+    unsafe extern "C" fn reconfigure(fc: *mut bindings::fs_context) -> c_int {
+        let rdonly = bindings::SB_RDONLY as c_uint;
+        // SAFETY: The VFS passes a valid reconfiguration context.
+        let (flags, mask) = unsafe { ((*fc).sb_flags, (*fc).sb_flags_mask) };
+        if mask & rdonly != 0 && flags & rdonly == 0 {
+            return EROFS.to_errno();
+        }
+        0
     }
 
     unsafe extern "C" fn kill_sb(sb: *mut bindings::super_block) {

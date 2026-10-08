@@ -271,9 +271,12 @@ unsafe extern "C" fn probe_callback<T: Driver>(vdev: *mut bindings::virtio_devic
         // `remove_callback`.
         let r = T::post_probe(dev, unsafe { <T::Data as ForeignOwnable>::borrow(p) });
         if r.is_err() {
-            // SAFETY: The device is valid; resetting quiesces callbacks before reclaiming.
+            // SAFETY: The device is valid. Reset alone does not synchronise callbacks on every
+            // transport; deleting the queues frees their interrupts, so no callback can still be
+            // running or start once `priv` is cleared.
             unsafe {
                 bindings::virtio_reset_device(vdev);
+                bindings::virtio_del_vqs(vdev);
                 (*vdev).priv_ = core::ptr::null_mut();
             }
             // SAFETY: Reclaimed exactly once; nothing else can observe `p` any more.

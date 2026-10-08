@@ -73,11 +73,17 @@ impl Channel {
     }
 
     /// Releases a claim and frees the request buffers.
+    ///
+    /// A dead channel may still have a request posted to the device, so its buffers are kept
+    /// until the `Channel` is dropped, which only happens after the driver's `remove` has reset
+    /// the device and deleted the queue.
     pub(crate) fn release(&self) {
         let mut st = self.state.lock();
         st.in_use = false;
-        st.tbuf = KVec::new();
-        st.rbuf = KVec::new();
+        if !st.dead {
+            st.tbuf = KVec::new();
+            st.rbuf = KVec::new();
+        }
     }
 
     /// Shrinks the buffers after version negotiation lowered `msize`.
@@ -141,9 +147,11 @@ impl Channel {
         let mut body = Dec::new(&reply[HDR..rsize]);
         if rtype == RLERROR {
             let ecode = body.u32()?;
+            // Errnos from 512 up are kernel-internal (`ERESTARTSYS`, `EIOCBQUEUED`, ...) and must
+            // never be returned to the VFS on behalf of a server.
             return Err(i32::try_from(ecode)
                 .ok()
-                .filter(|e| (1..4096).contains(e))
+                .filter(|e| (1..512).contains(e))
                 .map(|e| Error::from_errno(-e))
                 .unwrap_or(EIO));
         }

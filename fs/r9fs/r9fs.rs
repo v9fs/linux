@@ -174,8 +174,7 @@ impl FileSystem for R9fs {
             }
         }
         sb.set_magic(V9FS_MAGIC)
-            .set_blocksize_bits(12)
-            .set_read_only();
+            .set_blocksize_bits(12);
         Ok(KBox::new(Session::connect(&opts)?, GFP_KERNEL)?)
     }
 
@@ -198,8 +197,11 @@ impl FileSystem for R9fs {
         let session = inode.super_block().data();
         let fid = session.walk(inode.data().fid, None)?;
         // Read-only mount: always open for reading (`O_RDONLY`).
-        match session.lopen(fid, 0) {
-            Ok((_, iounit)) => Ok(KBox::new(OpenFile { fid, iounit }, GFP_KERNEL)?),
+        let opened = session
+            .lopen(fid, 0)
+            .and_then(|(_, iounit)| Ok(KBox::new(OpenFile { fid, iounit }, GFP_KERNEL)?));
+        match opened {
+            Ok(f) => Ok(f),
             Err(e) => {
                 session.clunk(fid);
                 Err(e)

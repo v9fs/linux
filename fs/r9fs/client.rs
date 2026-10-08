@@ -120,7 +120,12 @@ impl Session {
                 Ok(n)
             },
         )?;
-        if nwqid != nwname {
+        if nwqid > nwname {
+            // Malformed reply; the server may still have bound `newfid`.
+            self.clunk(newfid);
+            return Err(EIO);
+        }
+        if nwqid < nwname {
             // A partial walk does not create `newfid`.
             return Err(ENOENT);
         }

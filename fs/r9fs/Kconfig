@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 config R9FS_FS
 	tristate "r9fs: Rust 9P2000.L file system over virtio (EXPERIMENTAL)"
-	depends on RUST && VIRTIO=y
+	depends on RUST && VIRTIO=y && 64BIT
 	help
 	  A read-only 9P2000.L client file system written in Rust, using its
 	  own virtio-9p transport. It is independent of the C v9fs (9P_FS)

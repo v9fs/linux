@@ -218,9 +218,11 @@ impl<T: FileSystem> NewINode<T> {
                     (*inode).i_op = &Tables::<T>::LINK_IOPS;
                 }
                 INodeType::Chr(dev) | INodeType::Blk(dev) => {
+                    (*inode).i_op = &Tables::<T>::FILE_IOPS;
                     bindings::init_special_inode(inode, mode, dev);
                 }
                 INodeType::Fifo | INodeType::Sock => {
+                    (*inode).i_op = &Tables::<T>::FILE_IOPS;
                     bindings::init_special_inode(inode, mode, 0);
                 }
             }
@@ -315,15 +317,30 @@ struct Tables<T>(PhantomData<T>);
 impl<T: FileSystem> Tables<T> {
     const DIR_IOPS: bindings::inode_operations = bindings::inode_operations {
         lookup: Some(Self::lookup),
+        setattr: Some(Self::setattr),
         ..pin_init::zeroed()
     };
 
-    const FILE_IOPS: bindings::inode_operations = pin_init::zeroed();
+    const FILE_IOPS: bindings::inode_operations = bindings::inode_operations {
+        setattr: Some(Self::setattr),
+        ..pin_init::zeroed()
+    };
 
     const LINK_IOPS: bindings::inode_operations = bindings::inode_operations {
         get_link: Some(Self::get_link),
+        setattr: Some(Self::setattr),
         ..pin_init::zeroed()
     };
+
+    // Without this, `notify_change` falls back to `simple_setattr` and would change only the
+    // in-memory inode.
+    unsafe extern "C" fn setattr(
+        _idmap: *mut bindings::mnt_idmap,
+        _dentry: *mut bindings::dentry,
+        _attr: *mut bindings::iattr,
+    ) -> c_int {
+        EROFS.to_errno()
+    }
 
     const DIR_FOPS: bindings::file_operations = bindings::file_operations {
         open: Some(Self::open),
@@ -355,6 +372,10 @@ impl<T: FileSystem> Tables<T> {
             core::slice::from_raw_parts(qstr.name, qstr.__bindgen_anon_1.__bindgen_anon_1.len as usize)
         };
         let inode = match T::lookup(parent, name) {
+            // An inode of another superblock could outlive its `s_fs_info`.
+            Ok(Some(i)) if !core::ptr::eq(i.super_block(), parent.super_block()) => {
+                return EIO.to_ptr()
+            }
             Ok(Some(i)) => ARef::into_raw(i).as_ptr().cast(),
             Ok(None) => core::ptr::null_mut(),
             Err(e) => return e.to_ptr(),

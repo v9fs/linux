@@ -101,8 +101,60 @@ fn inode_type(attr: &Attr) -> Result<INodeType> {
     })
 }
 
+fn init_inode(
+    new: fs::inode::NewINode<R9fs>,
+    fid: u32,
+    typ: INodeType,
+    attr: &Attr,
+) -> Result<ARef<INode<R9fs>>> {
+    new.init(INodeParams {
+        typ,
+        mode: (attr.mode & 0o7777) as u16,
+        size: attr.size.min(i64::MAX as u64) as i64,
+        blocks: attr.blocks,
+        nlink: attr.nlink.min(u32::MAX.into()) as u32,
+        uid: attr.uid,
+        gid: attr.gid,
+        atime: ts(attr.atime),
+        mtime: ts(attr.mtime),
+        ctime: ts(attr.ctime),
+        value: InodeData { fid },
+    })
+}
+
+/// Keeps `inode` when its `S_IFMT` matches `typ`, clunking `fid`. On a clash, allocates a
+/// distinct inode with the same number and keeps `fid` for that inode.
+fn claim_inode(
+    sb: &SuperBlock<R9fs>,
+    fid: u32,
+    typ: INodeType,
+    attr: &Attr,
+    inode: ARef<INode<R9fs>>,
+) -> Result<ARef<INode<R9fs>>> {
+    let session = sb.data();
+    if inode.type_bits() == typ.type_bits() {
+        session.clunk(fid);
+        return Ok(inode);
+    }
+    drop(inode);
+    // `iget5` matches on `S_IFMT`, so an existing result is the other inode of this type,
+    // not the one just dropped. A miss allocates a distinct inode and keeps `fid`.
+    match sb.get_or_create_inode_of_type(attr.qid.ino(), typ) {
+        Ok(Either::Existing(inode)) => {
+            session.clunk(fid);
+            Ok(inode)
+        }
+        Ok(Either::New(new)) => init_inode(new, fid, typ, attr),
+        Err(e) => {
+            session.clunk(fid);
+            Err(e)
+        }
+    }
+}
+
 /// Returns the inode for `fid`, consuming `fid`: it becomes the inode's fid if the inode is new
-/// and is clunked otherwise.
+/// and is clunked otherwise. A reused qid whose `S_IFMT` differs from the cached inode gets a
+/// distinct inode rather than that inode's fid.
 fn make_inode(sb: &SuperBlock<R9fs>, fid: u32) -> Result<ARef<INode<R9fs>>> {
     let session = sb.data();
     let attr = match session.getattr(fid) {
@@ -120,23 +172,8 @@ fn make_inode(sb: &SuperBlock<R9fs>, fid: u32) -> Result<ARef<INode<R9fs>>> {
         }
     };
     match sb.get_or_create_inode(attr.qid.ino()) {
-        Ok(Either::Existing(inode)) => {
-            session.clunk(fid);
-            Ok(inode)
-        }
-        Ok(Either::New(new)) => new.init(INodeParams {
-            typ,
-            mode: (attr.mode & 0o7777) as u16,
-            size: attr.size.min(i64::MAX as u64) as i64,
-            blocks: attr.blocks,
-            nlink: attr.nlink.min(u32::MAX.into()) as u32,
-            uid: attr.uid,
-            gid: attr.gid,
-            atime: ts(attr.atime),
-            mtime: ts(attr.mtime),
-            ctime: ts(attr.ctime),
-            value: InodeData { fid },
-        }),
+        Ok(Either::Existing(inode)) => claim_inode(sb, fid, typ, &attr, inode),
+        Ok(Either::New(new)) => init_inode(new, fid, typ, &attr),
         Err(e) => {
             session.clunk(fid);
             Err(e)

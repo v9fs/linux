@@ -46,6 +46,11 @@ impl INodeType {
             Self::Sock => bindings::S_IFSOCK,
         }) as u16
     }
+
+    /// `S_IFMT` bits for this type.
+    pub fn type_bits(self) -> u16 {
+        self.mode_bits()
+    }
 }
 
 /// A point in time, in seconds and nanoseconds since the epoch.
@@ -136,6 +141,13 @@ impl<T: FileSystem> INode<T> {
         unsafe { (*self.as_raw()).i_ino }
     }
 
+    /// `S_IFMT` bits of `i_mode`. Stable here: setattr is rejected with `EROFS`.
+    pub fn type_bits(&self) -> u16 {
+        // SAFETY: An existing inode's `i_mode` was published by `unlock_new_inode`.
+        let mode = unsafe { (*self.as_raw()).i_mode };
+        mode & (bindings::S_IFMT as u16)
+    }
+
     /// Returns the superblock this inode belongs to.
     pub fn super_block(&self) -> &SuperBlock<T> {
         // SAFETY: An initialised inode keeps its live, initialised superblock alive.
@@ -169,15 +181,76 @@ pub enum Either<T: FileSystem> {
 pub(crate) fn get_or_create<T: FileSystem>(sb: &SuperBlock<T>, ino: u64) -> Result<Either<T>> {
     // SAFETY: The superblock is valid.
     let inode = unsafe { bindings::iget_locked(sb.as_raw(), ino) };
+    either_from_iget(inode)
+}
+
+/// Identity passed to `iget5_locked`: inode number plus `S_IFMT`.
+struct IgetId {
+    ino: u64,
+    typ: u16,
+}
+
+/// `iget5` test. The hash bucket is shared, so both `i_ino` and `S_IFMT` are compared.
+/// Called under `inode_hash_lock`.
+unsafe extern "C" fn test_sifmt(inode: *mut bindings::inode, data: *mut c_void) -> c_int {
+    // SAFETY: `data` points at the `IgetId` passed to `iget5_locked`, live for the call.
+    let want = unsafe { &*data.cast::<IgetId>() };
+    // SAFETY: `inode` is in the hash and its number and mode are readable.
+    let (ino, mode) = unsafe { ((*inode).i_ino, (*inode).i_mode) };
+    if ino == want.ino && mode & (bindings::S_IFMT as u16) == want.typ {
+        1
+    } else {
+        0
+    }
+}
+
+/// Publish the number and type before the new inode is hashed. `iget5_locked` does not set
+/// `i_ino` itself, and a concurrent lookup must be able to match this inode while it is `I_NEW`.
+unsafe extern "C" fn set_sifmt(inode: *mut bindings::inode, data: *mut c_void) -> c_int {
+    // SAFETY: Same pointer as `test_sifmt`. The inode is not yet on the hash.
+    let want = unsafe { &*data.cast::<IgetId>() };
+    unsafe {
+        (*inode).i_ino = want.ino;
+        (*inode).i_mode = want.typ;
+    }
+    0
+}
+
+/// Like [`get_or_create`], but an existing inode is returned only when its `S_IFMT` matches
+/// `typ`. A reused inode number of a different type allocates a distinct inode.
+pub(crate) fn get_or_create_of_type<T: FileSystem>(
+    sb: &SuperBlock<T>,
+    ino: u64,
+    typ: INodeType,
+) -> Result<Either<T>> {
+    let mut id = IgetId {
+        ino,
+        typ: typ.type_bits(),
+    };
+    // SAFETY: The superblock is valid. `id` stays live for the call. `test_sifmt` and
+    // `set_sifmt` do not sleep.
+    let inode = unsafe {
+        bindings::iget5_locked(
+            sb.as_raw(),
+            ino,
+            Some(test_sifmt),
+            Some(set_sifmt),
+            (&mut id as *mut IgetId).cast(),
+        )
+    };
+    either_from_iget(inode)
+}
+
+fn either_from_iget<T: FileSystem>(inode: *mut bindings::inode) -> Result<Either<T>> {
     let inode = NonNull::new(inode).ok_or(ENOMEM)?;
     let outer = container_of_inode::<T>(inode.as_ptr());
-    // SAFETY: `iget_locked` returns either an initialised inode or a new `I_NEW` one that only
-    // this thread can touch; our data is `None` exactly in the latter case.
+    // SAFETY: `iget_locked` / `iget5_locked` returns either an initialised inode or a new
+    // `I_NEW` one that only this thread can touch; our data is `None` exactly in the latter case.
     let is_new = unsafe { (*(*outer).data.get()).is_none() };
     if is_new {
         Ok(Either::New(NewINode(inode, PhantomData)))
     } else {
-        // SAFETY: `iget_locked` returned a reference we now own.
+        // SAFETY: The iget returned a reference we now own.
         Ok(Either::Existing(unsafe { ARef::from_raw(inode.cast()) }))
     }
 }

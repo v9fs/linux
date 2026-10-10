@@ -179,6 +179,16 @@ impl<T: FileSystem> SuperBlock<T> {
     pub fn get_or_create_inode(&self, ino: u64) -> Result<inode::Either<T>> {
         inode::get_or_create(self, ino)
     }
+
+    /// Returns the inode numbered `ino` whose `S_IFMT` matches `typ`, or a new inode with that
+    /// number when every cached inode for `ino` has a different type.
+    pub fn get_or_create_inode_of_type(
+        &self,
+        ino: u64,
+        typ: inode::INodeType,
+    ) -> Result<inode::Either<T>> {
+        inode::get_or_create_of_type(self, ino, typ)
+    }
 }
 
 /// A superblock under construction, passed to [`FileSystem::fill_super`].
